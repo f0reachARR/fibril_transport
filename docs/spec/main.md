@@ -19,6 +19,23 @@ ProtobufライクなDSL（定義ファイル）を用いることで、ファー
 | **Fast Path** | **Standard (11-bit)** | Realtime Control (Sub)<br>Realtime Notify (Pub) | **動的マッピング**。ID空間の競合を避けるため、Masterが実行時にIDを割り当てる。オーバーヘッドが最小。 |
 | **Slow Path** | **Extended (29-bit)** | Discovery<br>Configuration<br>Parameters (Param) | **固定割り当て**。デバイスIDや機能IDを含む構造化されたIDを使用。確実性を重視。 |
 
+### 3.1.1. Extended ID (29-bit) のビットフィールド
+
+```text
+[28:24] 機能種別 (5-bit) - 最大32種類
+  - 0x00: Discovery (デバイス列挙)
+  - 0x01: Definition Exchange (ノード定義の交換)
+  - 0x02: Configuration (IDマップ配布)
+  - 0x03: Parameter Service (パラメータ読み書き)
+  - 0x04-0x1F: (予約)
+[23:19] DeviceID (5-bit) - 最大32デバイス
+  - 0x1F: ブロードキャスト用予約
+[18:14] NodeID (5-bit) - 1デバイス最大32ノード
+  - 0x1F: デバイス全体を指す場合に使用
+[13:0]  サブ機能/シーケンス (14-bit)
+  - 機能ごとに用途が異なる（リクエストID、フレーム番号など）
+```
+
 ### 3.1. 通信モード
 
 - **Command (Fire-and-Forget):** `Master -> Device`。レスポンス不要の高速指令。Standard IDを使用。
@@ -81,13 +98,68 @@ node MobileBase {
 
 ---
 
-## 5. データ最適化と動的構成
+## 5. 複数ノード管理 (Multi-Node Management)
 
-### 5.1. Auto-Addressing
+### 5.1. デバイス側のノード管理
+
+1つのデバイスは、複数の `.fibril` ファイルから生成されたノードを搭載できます。各ノードは **NodeID** によって識別されます。
+
+#### 5.1.1. 静的登録と自動採番
+
+デバイスのファームウェアでは、以下のように明示的にノードを登録します：
+
+```cpp
+// 各DSLから生成されたノードインスタンス
+GamePad node_gamepad;
+LEDController node_led;
+MobileBase node_base;
+
+// main関数内で登録（この順序でNodeIDが自動採番される）
+int main() {
+    FibrilDevice device;
+    device.register_node(&node_gamepad);  // NodeID = 0
+    device.register_node(&node_led);      // NodeID = 1
+    device.register_node(&node_base);     // NodeID = 2
+
+    device.init();
+    while(1) {
+        device.process();
+    }
+}
+```
+
+**重要な点:**
+
+- NodeIDは `register_node()` の**呼び出し順序**によって決定される（0から始まる連番）
+- 登録順序はユーザーの責任で制御する
+- DSL内にNodeIDは記述されない（同じDSLから複数インスタンスを作成可能）
+
+#### 5.1.2. Definition Binary (definition.bin)
+
+各 `.fibril` ファイルから、`fibril_gen` ツールによって以下が生成されます：
+
+- `node_xxx.hpp`: C++コード（ノードクラス定義）
+- `node_xxx_def.bin`: ノード定義バイナリ（埋め込みデータ）
+
+**definition.binの役割:**
+
+- Masterがノードの構造を理解するためのメタデータ
+- チェックサム計算の元データ（`definition.bin` 全体のハッシュがノード定義のIDとなる）
+
+### 5.2. チェックサムベースの定義キャッシュ
+
+Masterは、過去に取得した定義を**チェックサム**をキーにしてキャッシュします。
+
+- **チェックサム**: `definition.bin` 全体のSHA256ハッシュ（またはCRC32など）
+- **衝突時の扱い**: 同じチェックサム = 同じノード定義なので、通信内容は同一。複数のNodeIDが同じチェックサムを持つことは問題なし。
+
+## 6. データ最適化と動的構成
+
+### 6.1. Auto-Addressing
 
 DSL内の各フィールドには、定義順に自動的に連番の内部アドレスが割り当てられます。ユーザーが手動で `0x10` などを管理する必要はありません。
 
-### 5.2. Auto-Layout & Packing (Virtual Frame)
+### 6.2. Auto-Layout & Packing (Virtual Frame)
 
 MasterはDeviceの定義に基づき、複数のデータを1つのCANフレーム（最大64byte）にまとめる**パッキング**を自動計算します。
 
@@ -95,7 +167,7 @@ MasterはDeviceの定義に基づき、複数のデータを1つのCANフレー�
 - **Sync-Group:** 同期が必要なデータ（例：左右の車輪指令）は同一フレームにパッキングされるようスケジューリング可能。
   - 複数Nodeがある場合、同じpub/subを優先してまとめにいく。
 
-### 5.3. ROS Type Mapping (Duck Typing)
+### 6.3. ROS Type Mapping (Duck Typing)
 
 ROSの標準メッセージ型と、FWの軽量な型を自動変換します。
 
@@ -104,23 +176,117 @@ ROSの標準メッセージ型と、FWの軽量な型を自動変換します。
 
 ---
 
-## 6. ライフサイクル (Startup Sequence)
+## 7. ライフサイクル (Startup Sequence)
 
-1. **Enumeration:** Masterがバス上のDeviceをスキャン（Ext ID）。
-    - 各Deviceは固有の `DeviceID` を持ち、同じNode定義を持つ複数インスタンスを識別可能。
-    - Device中のノードは異種同種に関わらず `NodeID` を持ち、同一Device内での区別に使用。
-    - `DeviceID` を一覧取得したあと、それぞれに `NodeID` 一覧を問い合わせ、次に進む。
-2. **Definition Exchange:** MasterがDeviceのもつ各Nodeから「チェックサム」を取得、必要ならさらに「定義バイナリ」を取得。
-    - スキーマチェックサムにより、定義の一致を確認。
-    - Masterは次回以降の起動を高速化するため、定義をキャッシュ可能。
-3. **Layout Calculation:** MasterがDSL情報を解析し、パッキングルールとStandard IDの割り当てマップを作成。
-4. **Configuration:** MasterがDeviceへ「IDマップ情報」を送信（Ext ID）。
-    - 例: 「NodeID 0について、Address 0と1のデータは、今後 Standard ID `0x100` の Offset 0, 4 で受信せよ」
-5. **Activation:** 通信開始。以降、Fast Path（Std ID）での高速制御が行われる。
+起動時、Masterは以下のフェーズを順に実行します。すべてExtended IDを使用します。
+
+### 7.1. Discovery (デバイス列挙)
+
+**目的:** バス上の全デバイスを発見する。
+
+1. **Master → Broadcast (DeviceID=0x1F):**
+   - Extended ID: `[機能=0x00][DevID=0x1F][NodeID=0x1F][Sub=0x0000]`
+   - Payload: 空（Discovery Request）
+
+2. **各Device → Master:**
+   - Extended ID: `[機能=0x00][DevID=自分のID][NodeID=0x1F][Sub=0x0000]`
+   - Payload: `[ノード数 (1byte)]`
+
+**結果:** Masterは存在する全DeviceIDとそれぞれのノード数を把握。
+
+### 7.2. Definition Exchange (ノード定義の交換)
+
+**目的:** 各デバイスの各ノードの定義を取得する（チェックサムベース）。
+
+#### 7.2.1. チェックサムリスト取得
+
+MasterはDeviceごとに以下を実行：
+
+1. **Master → Device:**
+   - Extended ID: `[機能=0x01][DevID=X][NodeID=0x1F][Sub=0x0000]`
+   - Payload: 空（ノード定義リスト要求）
+
+2. **Device → Master（複数フレーム）:**
+   各ノードについて以下を送信：
+   - Extended ID: `[機能=0x01][DevID=X][NodeID=0x1F][Sub=NodeIndex]`
+   - Payload: `[NodeID (1byte)][Checksum (4byte)]`
+
+**例:** DeviceID=1が3ノードを持つ場合
+
+```text
+Frame 1: ExtID=[0x01][0x01][0x1F][0x0000], Data=[0x00][0xAABBCCDD]  // Node 0
+Frame 2: ExtID=[0x01][0x01][0x1F][0x0001], Data=[0x01][0x11223344]  // Node 1
+Frame 3: ExtID=[0x01][0x01][0x1F][0x0002], Data=[0x02][0xAABBCCDD]  // Node 2 (同じチェックサム=同じ定義)
+```
+
+#### 7.2.2. 未知の定義バイナリ取得
+
+Masterは未知のチェックサムについて、定義バイナリを要求：
+
+1. **Master → Device:**
+   - Extended ID: `[機能=0x01][DevID=X][NodeID=Y][Sub=0x1000]`
+   - Payload: 空（定義バイナリ要求）
+
+2. **Device → Master（複数フレーム）:**
+   - Extended ID: `[機能=0x01][DevID=X][NodeID=Y][Sub=フレーム番号]`
+   - Payload: definition.binの断片（最大64byte/フレーム）
+
+3. **Master:**
+   - 受信したバイナリを結合し、チェックサムを検証
+   - 定義を解析してキャッシュに保存
+
+**型の検証:**
+
+- Masterは取得した定義から型情報を抽出
+- ルーティング設定時に、Port間の型の構造的一致を確認
+- 不一致の場合はエラーを報告（Device側では検証しない）
+
+### 7.3. Layout Calculation (パッキング計算)
+
+**目的:** 各デバイス・各ノードのデータをCANフレームにどう配置するか決定。
+
+Masterは以下を計算：
+
+- **Standard IDの割り当て:** 各Portまたはデータグループに一意なIDを発行
+- **フレーム内レイアウト:** 複数のデータを1フレームにパッキングする場合のOffset
+- **ルーティング:** device-to-device接続の場合、送信側と受信側のマッピング
+
+### 7.4. Configuration (設定配布)
+
+**目的:** 計算したレイアウト情報をデバイスへ送信。
+
+MasterはDeviceごとに以下を送信：
+
+1. **Master → Device:**
+   - Extended ID: `[機能=0x02][DevID=X][NodeID=Y][Sub=シーケンス番号]`
+   - Payload: IDマップ情報
+
+**IDマップ情報の例（受信設定）:**
+
+```text
+[NodeID (1byte)][Address (1byte)][Standard ID (2byte)][Offset (1byte)][Length (1byte)]
+→ "NodeID YのAddress Zのデータは、Standard ID 0x100のOffset 4から8byteで受信せよ"
+```
+
+**IDマップ情報の例（送信設定）:**
+
+```text
+[NodeID (1byte)][Address (1byte)][Standard ID (2byte)][Offset (1byte)]
+→ "NodeID YのAddress Zのデータは、Standard ID 0x200のOffset 0へ送信せよ"
+```
+
+複数のPort/Addressがある場合、複数のフレームで送信。
+
+### 7.5. Activation (通信開始)
+
+設定完了後、通常動作に移行：
+
+- **Fast Path (Standard ID):** リアルタイム制御データの送受信
+- **Slow Path (Extended ID):** パラメータアクセス（機能=0x03）
 
 ---
 
-## 7. 開発フロー
+## 8. 開発フロー
 
 1. **Define:** ユーザーが `.fibril` ファイルを作成。
 2. **Generate:** `fibril_gen` ツールを実行。
@@ -132,9 +298,102 @@ ROSの標準メッセージ型と、FWの軽量な型を自動変換します。
 
 ---
 
-## Appendix: DeviceIDとNodeID
+## Appendix A: DeviceIDとNodeID
 
-- DeviceIDは各デバイスのハードウェアに依存しており、この開発では具体的な方法は議論しません。
+- **DeviceID**: 各デバイスのハードウェアに依存しており、この開発では具体的な方法は議論しません。
   - 一般にはDIPスイッチなどが考えられ、生成コードのAPIを通じて設定します。
+- **NodeID**: デバイス内でのノード識別子。`register_node()` の呼び出し順で自動採番されます。
 - DeviceID/NodeIDをそのままROSトピック名に含めることも可能ですが、ユーザーが上書きできます。
   - これはYAML等の設定ファイルによって与えられます。
+
+## Appendix B: definition.bin フォーマット
+
+各ノードの定義バイナリ（`definition.bin`）は以下の構造を持ちます：
+
+### B.1. ヘッダ部
+
+```text
+Offset | Size | Field              | Description
+-------|------|--------------------|---------------------------------
+0x00   | 4    | Magic Number       | "FBRL" (0x4642524C)
+0x04   | 2    | Version            | プロトコルバージョン (0x0200 = v2.0)
+0x06   | 1    | Node Name Length   | ノード名の長さ (N bytes)
+0x07   | N    | Node Name          | ノード名文字列 (例: "MobileBase")
+0x07+N | 1    | Port Count         | Portの数 (P個)
+...    | ...  | Port Entries       | 各Portの定義（以下参照）
+...    | ...  | Metadata           | ノード全体のメタデータ（ros_map, descriptionなど）
+```
+
+### B.2. Port Entry (× Port Count)
+
+各Portについて以下の情報が続きます：
+
+```text
+Offset | Size | Field              | Description
+-------|------|--------------------|---------------------------------
+0x00   | 1    | Port Name Length   | Port名の長さ (M bytes)
+0x01   | M    | Port Name          | Port名文字列 (例: "target_vel")
+0x01+M | 1    | Direction          | 0=sub, 1=pub, 2=param
+0x02+M | 2    | Type Info Length   | 型情報部のサイズ (T bytes)
+0x04+M | T    | Type Info          | 型定義（構造体情報）
+...    | ...  | Metadata           | ros_map, unit, default値など
+```
+
+### B.3. 型情報 (Type Info)
+
+構造体の場合：
+
+```text
+Offset | Size | Field              | Description
+-------|------|--------------------|---------------------------------
+0x00   | 1    | Type Kind          | 0=primitive, 1=struct
+0x01   | 1    | Struct Name Length | 構造体名の長さ (S bytes)
+0x02   | S    | Struct Name        | 構造体名 (例: "Twist2D")
+0x02+S | 1    | Field Count        | フィールド数 (F個)
+```
+
+各フィールド：
+
+```text
+Offset | Size | Field              | Description
+-------|------|--------------------|---------------------------------
+0x00   | 1    | Field Name Length  | フィールド名の長さ (L bytes)
+0x01   | L    | Field Name         | フィールド名 (例: "v")
+0x01+L | 1    | Primitive Type     | 型ID (0=float, 1=int32, 2=uint32, ...)
+0x02+L | 2    | Array Size         | 配列長 (0=非配列, >0=固定長配列)
+```
+
+プリミティブ型の場合：
+
+```text
+Offset | Size | Field              | Description
+-------|------|--------------------|---------------------------------
+0x00   | 1    | Type Kind          | 0=primitive
+0x01   | 1    | Primitive Type     | 型ID (0=float, 1=int32, ...)
+```
+
+### B.4. メタデータ (Metadata)
+
+可変長のKey-Value形式：
+
+```text
+Offset | Size | Field              | Description
+-------|------|--------------------|---------------------------------
+0x00   | 1    | Metadata Count     | メタデータ項目数 (K個)
+```
+
+各メタデータ項目：
+
+```text
+Offset | Size | Field              | Description
+-------|------|--------------------|---------------------------------
+0x00   | 1    | Key Length         | キーの長さ
+0x01   | K    | Key                | キー文字列 (例: "ros_map", "unit")
+0x01+K | 2    | Value Length       | 値の長さ
+0x03+K | V    | Value              | 値（文字列または数値）
+```
+
+### B.5. チェックサム計算
+
+- definition.bin全体（ヘッダから最後のメタデータまで）のCRC32またはSHA256ハッシュ
+- ファイル末尾には含まれず、Masterで別途計算される
