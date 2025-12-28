@@ -647,8 +647,7 @@ public:
     // 送信トリガー
     void publish_stick_input();
 
-    // パラメータアクセス
-    float get_publish_rate() const;
+    // パラメータアクセス（初回にMasterからデフォルト値が設定される）
     void set_publish_rate(float value);
 };
 ```
