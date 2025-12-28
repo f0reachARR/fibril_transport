@@ -23,7 +23,7 @@ struct TypeName {
 
 // ノード定義
 node NodeName {
-    // Port定義（pub/sub/param）
+    // Port定義（pub/sub/service）
 }
 ```
 
@@ -192,7 +192,7 @@ struct IMUData {
 - 可変長配列はサポートしません
 - 多次元配列はサポートしません
 
-## 4. Port定義（pub/sub/param）
+## 4. Port定義（pub/sub/service）
 
 ノード内で定義するデータの出入り口をPortと呼びます。
 
@@ -227,33 +227,81 @@ node BatterySensor {
 
 **送信周期について:**
 
-- 送信周期はDSLでは指定せず、paramで設定します
+- 送信周期はDSLでは指定せず、serviceで設定します
 - アノテーション `#[periodic]` で周期的な送信を示唆できます（パッキングの最適化ヒント）
 
-### 4.3. param（パラメータ）
+### 4.3. service（サービス）
 
-デバイスが保持する設定値。ROS 2パラメータとして公開されます。
+双方向通信（Request/Response）を定義します。2つのユースケースがあります。
+
+#### 4.3.1. ROS Serviceとして公開
+
+既存のROS `.srv`ファイルを参照して、ROSサービスとして公開します。
 
 ```protobuf
+// 軽量なRequest/Response型を定義
+struct EnableMotorRequest {
+    #[ros_map(data)]
+    bool enable;
+}
+
+struct EnableMotorResponse {
+    #[ros_map(success)]
+    bool success;
+    // std_srvs/srv/SetBoolのmessageフィールドは省略（不要）
+}
+
 node MobileBase {
-    param float max_velocity = 1.0;      // デフォルト値あり
-    param uint16 control_frequency = 50; // Hz
+    #[ros_service(std_srvs/srv/SetBool)]
+    service enable_motor(EnableMotorRequest) -> EnableMotorResponse;
+
+    #[ros_service(std_srvs/srv/Trigger)]
+    service reset_odometry() -> void;
 }
 ```
 
-- 読み取り・書き込み可能（ROS 2パラメータサーバ経由）
+**特徴:**
+
+- `#[ros_service(...)]` 属性でROS srvファイルを指定
+- Request/Response型は軽量に定義し、`#[ros_map]`でマッピング
+- 不要なフィールドは省略可能（Master側で補完）、structへの指定がない場合は何も送らないし受け取らない (void相当)
 - 通信: Extended ID (Slow Path, 機能=0x03)
-- デフォルト値は必須
+
+#### 4.3.2. ROS Parameterとして公開
+
+シンプルなパラメータ設定用のサービス。ROS 2パラメータとして公開されます。
+
+```protobuf
+node MobileBase {
+    #[ros_param("~/max_velocity", 1.0)]
+    service set_max_velocity(float value) -> void;
+
+    #[ros_param("~/control_frequency", 50)]
+    service set_control_freq(uint16 freq) -> void;
+}
+```
+
+**制約:**
+
+- Request型: プリミティブ型のみ
+- Response型: 必ず `void`
+- デフォルト値が必須
+- ROSサービスは作られず、パラメータサーバ経由でアクセス
+
+**使い分け:**
+
+- 複雑なRequest/Response → `#[ros_service(...)]`
+- シンプルな設定値 → `#[ros_param(...)]`
 
 ## 5. 属性（Attributes）
 
-属性は `#[key(value)]` または `#[key]` の形式で、構造体・フィールド・Portに付与します。
+属性は `#[key(value1, value2, ...)]` または `#[key]` の形式で、構造体・フィールド・Portに付与します。
 
 ### 5.1. 利用可能な属性
 
-#### 5.1.1. ros（ROSトピック/パラメータ名）
+#### 5.1.1. ros（ROSトピック/パラメータ/サービス名）
 
-**適用対象:** Port（pub/sub/param）
+**適用対象:** Port（pub/sub/service）
 
 ROSでの名前を指定します。省略時はPort名がそのまま使われます。
 
@@ -264,10 +312,14 @@ node MobileBase {
 
     #[ros("~/voltage")]
     pub float battery_voltage;  // ROS: ~/voltage (相対パス)
+
+    #[ros("~/enable_motor")]
+    #[ros_service(std_srvs/srv/SetBool)]
+    service enable_motor(EnableMotorRequest) -> EnableMotorResponse;
 }
 ```
 
-- 絶対パス（`/`始まり）: グローバルトピック
+- 絶対パス（`/`始まり）: グローバルトピック/サービス
 - 相対パス（`~/`始まり）: ノード名前空間内
 
 #### 5.1.2. ros_type（ROSメッセージ型）
@@ -333,9 +385,39 @@ node IMU {
 }
 ```
 
-**注意:** 実際の送信周期はparamで設定します。これはパッキング計算のヒントです。
+**注意:** 実際の送信周期はserviceかparamで設定します。これはパッキング計算のヒントです。
 
-#### 5.1.6. description（説明）
+#### 5.1.6. ros_service（ROSサービス型）
+
+**適用対象:** service Port
+
+既存のROS `.srv`ファイルを参照します。
+
+```protobuf
+#[ros_service(std_srvs/srv/SetBool)]
+service enable_motor(EnableMotorRequest) -> EnableMotorResponse;
+```
+
+- EnableMotorRequest/Responseはstructで定義される必要があります。
+
+#### 5.1.7. ros_param（ROSパラメータ公開）
+
+**適用対象:** service Port
+
+ROS 2パラメータとして公開します（サービスは作られません）。
+
+```protobuf
+#[ros_param("~/max_velocity", 1.0)]
+service set_max_velocity(float value) -> void;
+```
+
+**制約:**
+
+- Request型はプリミティブ型のみ
+- Response型は必ず `void`
+- デフォルト値が第二引数として必須
+
+#### 5.1.8. description（説明）
 
 **適用対象:** すべて
 
@@ -385,9 +467,9 @@ node BatterySensor {
     pub float battery_current;
 
     // 送信周期の設定（パラメータ）
-    #[ros("~/publish_rate")]
+    #[ros_param("~/publish_rate", 10)]
     #[unit("Hz")]
-    param uint16 publish_rate = 10;
+    service set_publish_rate(uint16 rate) -> void;
 }
 ```
 
@@ -445,22 +527,22 @@ node MobileBase {
     pub float battery_voltage;
 
     // --- Parameters ---
-    #[ros("~/max_velocity")]
+    #[ros_param("~/max_velocity", 1.0)]
     #[unit("m/s")]
     #[description("最大速度制限")]
-    param float max_velocity = 1.0;
+    service set_max_velocity(float value) -> void;
 
-    #[ros("~/max_angular_velocity")]
+    #[ros_param("~/max_angular_velocity", 2.0)]
     #[unit("rad/s")]
-    param float max_angular_velocity = 2.0;
+    service set_max_angular_velocity(float value) -> void;
 
-    #[ros("~/odom_publish_rate")]
+    #[ros_param("~/odom_publish_rate", 50)]
     #[unit("Hz")]
-    param uint16 odom_publish_rate = 50;
+    service set_odom_publish_rate(uint16 rate) -> void;
 
-    #[ros("~/battery_publish_rate")]
+    #[ros_param("~/battery_publish_rate", 1)]
     #[unit("Hz")]
-    param uint16 battery_publish_rate = 1;
+    service set_battery_publish_rate(uint16 rate) -> void;
 }
 ```
 
@@ -496,9 +578,9 @@ node IMU {
     #[periodic]
     pub IMUData imu_data;
 
-    #[ros("~/publish_rate")]
+    #[ros_param("~/publish_rate", 100)]
     #[unit("Hz")]
-    param uint16 publish_rate = 100;
+    service set_publish_rate(uint16 rate) -> void;
 }
 ```
 
@@ -522,9 +604,9 @@ node RobotArm {
     #[periodic]
     pub JointState joint_state;
 
-    #[ros("~/publish_rate")]
+    #[ros_param("~/publish_rate", 50)]
     #[unit("Hz")]
-    param uint16 publish_rate = 50;
+    service set_publish_rate(uint16 rate) -> void;
 }
 ```
 
@@ -543,7 +625,7 @@ node RobotArm {
 
 ### 7.3. パラメータのデフォルト値
 
-- paramには必ずデフォルト値を指定します
+- `ros_param`には必ずデフォルト値を指定します
 - デフォルト値は定数リテラルのみ（式は不可）
 
 ### 7.4. ROS型マッピング
@@ -721,7 +803,7 @@ Error: Circular import detected: a.fibril -> b.fibril -> a.fibril
 - `node`
 - `pub`
 - `sub`
-- `param`
+- `service`
 - すべてのプリミティブ型名（`bool`, `int8`, `uint8`, ...）
 
 ---
