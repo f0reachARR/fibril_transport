@@ -372,7 +372,21 @@ struct Twist2D {
 }
 ```
 
-#### 5.1.5. periodic（周期送信ヒント）
+#### 5.1.5. ros_frame_id (ROS Frame ID)
+
+**適用対象:** Port（pub）, 構造体
+
+ROSヘッダの `frame_id` を指定します。デバイスからは送信せず、MasterがROSメッセージを生成する際に自動付与します。
+
+```protobuf
+node IMU {
+    #[ros("~/imu")]
+    #[ros_frame_id("imu_link")]
+    pub IMUData imu_data;
+}
+```
+
+#### 5.1.6. periodic（周期送信ヒント）
 
 **適用対象:** pub Port
 

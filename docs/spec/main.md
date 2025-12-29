@@ -26,8 +26,9 @@ ProtobufライクなDSL（定義ファイル）を用いることで、ファー
   - 0x00: Discovery (デバイス列挙)
   - 0x01: Definition Exchange (ノード定義の交換)
   - 0x02: Configuration (IDマップ配布)
-  - 0x03: Parameter Service (パラメータ読み書き)
-  - 0x04-0x1F: (予約)
+  - 0x03: Service (汎用サービス / パラメータ)
+  - 0x04: Heartbeat (生存報告)
+  - 0x05-0x1F: (予約)
 [23:19] DeviceID (5-bit) - 最大32デバイス
   - 0x1F: ブロードキャスト用予約
 [18:14] NodeID (5-bit) - 1デバイス最大32ノード
@@ -282,7 +283,33 @@ MasterはDeviceごとに以下を送信：
 設定完了後、通常動作に移行：
 
 - **Fast Path (Standard ID):** リアルタイム制御データの送受信
-- **Slow Path (Extended ID):** パラメータアクセス（機能=0x03）
+- **Slow Path (Extended ID):** パラメータアクセスおよびサービスコール（機能=0x03）、Heartbeat（機能=0x04）
+
+### 7.6. Heartbeat & Reliability
+
+信頼性を担保するため、以下のメカニズムを導入します。
+
+#### 7.6.1. Heartbeat (Device -> Master)
+
+各デバイスは、自身の状態を定期的にブロードキャストします。
+
+- **Extended ID:** `[機能=0x04][DevID=X][NodeID=0x1F][Sub=0]`
+- **Payload:** `[Status (1byte)][Session ID (4bytes)]`
+  - `Status`: 0=Init, 1=Active, 2=Error
+  - `Session ID`: 起動時にランダム生成される32bit整数
+
+**役割:**
+1. **生存確認:** Masterは一定期間Heartbeatが途絶えたデバイスを「ロスト」扱いとします。
+2. **リセット検知:** 既知のDeviceIDから異なるSession IDが送られてきた場合、デバイスが再起動したと判断し、初期化シーケンス（Definition Exchange -> Config）を再実行します。
+3. **ID衝突検知:** 異なる物理デバイスが同じDeviceID（DIPスイッチ設定ミス等）を持つ場合、異なるSession IDが交互に観測されることでConflictを検知できます。Masterはエラーログを出力し、安全のためそのDeviceIDを無効化します。
+
+#### 7.6.2. Reconnection policy
+
+Masterは、Heartbeatの途絶やSession IDの不整合を検知した場合、即座にそのデバイスへのルーティングを停止し、Discoveryフェーズから再試行します。
+
+#### 7.6.3. Dynamic Reconfiguration
+
+`routing.yaml` の変更などにより構成を変える場合、MasterはいつでもConfigurationフェーズ（機能=0x02）を実行可能です。デバイスは新しいIDマップを受け取り、即座に適用します。
 
 ---
 
@@ -363,14 +390,31 @@ Offset | Size | Field              | Description
 0x02+L | 2    | Array Size         | 配列長 (0=非配列, >0=固定長配列)
 ```
 
-プリミティブ型の場合：
-
-```text
-Offset | Size | Field              | Description
--------|------|--------------------|---------------------------------
-0x00   | 1    | Type Kind          | 0=primitive
-0x01   | 1    | Primitive Type     | 型ID (0=float, 1=int32, ...)
-```
+366: プリミティブ型の場合：
+367: 
+368: ```text
+369: Offset | Size | Field              | Description
+370: -------|------|--------------------|---------------------------------
+371: 0x00   | 1    | Type Kind          | 0=primitive
+372: 0x01   | 1    | Primitive Type     | 型ID (下表参照)
+373: ```
+374:
+375: **Primitive Type IDs:**
+376:
+377: | ID | Type | Size |
+378: |---|---|---|
+379: | 0x00 | bool | 1 |
+380: | 0x01 | int8 | 1 |
+381: | 0x02 | uint8 | 1 |
+382: | 0x03 | int16 | 2 |
+383: | 0x04 | uint16 | 2 |
+384: | 0x05 | int32 | 4 |
+385: | 0x06 | uint32 | 4 |
+386: | 0x07 | int64 | 8 |
+387: | 0x08 | uint64 | 8 |
+388: | 0x09 | float | 4 |
+389: | 0x0A | double | 8 |
+390: | 0x0B-0xFF | (Reserved) | - |
 
 ### B.4. メタデータ (Metadata)
 
