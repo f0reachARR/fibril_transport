@@ -5,8 +5,8 @@
 本ドキュメントでは、Fibrilにおけるデータ転送レイヤ（Transport Layer）の詳細を定義します。
 CAN-FDの最大64byteという制約の中で、大きく分けて2つの転送モードを提供します。
 
-1.  **Fast Path (Standard ID)**: 制御周期に関わるリアルタイムデータ用。**分割不可**。
-2.  **Slow Path (Extended ID)**: ディスカバリ、定義交換、パラメータ設定、サービスコール用。**分割転送（Fragmentation）**をサポート。
+1. **Fast Path (Standard ID)**: 制御周期に関わるリアルタイムデータ用。**分割不可**。
+2. **Slow Path (Extended ID)**: ディスカバリ、定義交換、パラメータ設定、サービスコール用。**分割転送（Fragmentation）**をサポート。
 
 ---
 
@@ -14,17 +14,17 @@ CAN-FDの最大64byteという制約の中で、大きく分けて2つの転送�
 
 ### 2.1. 転送ルール
 
--   **IDフォーマット**: 11-bit Standard ID
--   **最大ペイロード**: 64 bytes (CAN-FD)
--   **分割**: **禁止**。必ず単一フレームに収まるように設計・運用すること。
+- **IDフォーマット**: 11-bit Standard ID
+- **最大ペイロード**: 64 bytes (CAN-FD)
+- **分割**: **禁止**。必ず単一フレームに収まるように設計・運用すること。
 
 ### 2.2. アクション
 
 64byteを超える構造体を `topic` (pub/sub) として定義した場合、Master（CodeGen）は以下の戦略をとります：
 
-1.  **Sub-struct Packing**:
+1. **Sub-struct Packing**:
     構造体を意味のある単位（サブ構造体ごと、あるいはフィールド単位）で分割し、それぞれに個別のStandard IDを割り当てます。
-2.  **Explicit Split**:
+2. **Explicit Split**:
     ユーザーに対して、モデル定義の分割を促します（警告またはエラー）。
 
 これにより、リアルタイム制御における再構築オーバーヘッドとパケットロスによる遅延リスクを排除します。
@@ -62,16 +62,16 @@ Slow Pathの全フレームは、ペイロードの先頭1byteを **FTP Header**
 
 63byte以下のデータを1フレームで送る場合。
 
--   **Header**: `0x00` | `DL (Data Length)` (6-bit)
--   **Payload**: `[Header] [Data...]` (Max 63 bytes)
+- **Header**: `0x00` | `DL (Data Length)` (6-bit)
+- **Payload**: `[Header] [Data...]` (Max 63 bytes)
 
 #### 3.3.2. First Frame (FF) - Type `01`
 
 マルチフレーム送信の開始。全体のデータ長を通知します。
 
--   **Header**: `0x40` | `Data Length Upper 6-bits`
--   **Byte 1**: `Data Length Lower 8-bits` (Total 14-bit length, Max 16KB)
--   **Payload**: `[Header] [LenLow] [Data...]` (Max 62 bytes)
+- **Header**: `0x40` | `Data Length Upper 6-bits`
+- **Byte 1**: `Data Length Lower 8-bits` (Total 14-bit length, Max 16KB)
+- **Payload**: `[Header] [LenLow] [Data...]` (Max 62 bytes)
 
 > Note: Sequence ID (CAN ID内) は、このフレームから一連のシーケンスとして扱われます。
 
@@ -79,8 +79,8 @@ Slow Pathの全フレームは、ペイロードの先頭1byteを **FTP Header**
 
 後続のデータフレーム。
 
--   **Header**: `0x80` | `Sequence Number` (6-bit, 0-63 loop)
--   **Payload**: `[Header] [Data...]` (Max 63 bytes)
+- **Header**: `0x80` | `Sequence Number` (6-bit, 0-63 loop)
+- **Payload**: `[Header] [Data...]` (Max 63 bytes)
 
 #### 3.3.4. Flow Control (FC) - Type `11`
 
@@ -90,8 +90,8 @@ Slow Pathの全フレームは、ペイロードの先頭1byteを **FTP Header**
 
 Extended ID内の `[13:0]` 部分は、一連の送受信トランザクションを識別するために使用します。
 
--   **Request (Client -> Server)**: `Sequence` フィールドに任意の **Transaction ID** をセット。
--   **Response (Server -> Client)**: Requestと同じ `Sequence` フィールドを使用して返信。
+- **Request (Client -> Server)**: `Sequence` フィールドに任意の **Transaction ID** をセット。
+- **Response (Server -> Client)**: Requestと同じ `Sequence` フィールドを使用して返信。
 
 これにより、多重リクエスト時の対応付けを行います。
 
@@ -106,11 +106,13 @@ Extended ID内の `[13:0]` 部分は、一連の送受信トランザクショ�
 データ本体（Reassembly後）は以下のフォーマットを持ちます。
 
 **Request:**
+
 ```binary
 [Service ID (1 byte)] [Arg Data...]
 ```
 
 **Response:**
+
 ```binary
 [Result Code (1 byte)] [Return Data...]
 ```

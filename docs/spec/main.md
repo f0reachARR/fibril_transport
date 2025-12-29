@@ -303,6 +303,7 @@ MasterはDeviceごとに以下を送信：
 7.1.1項に統合されました。Masterは `Feature=0x00` のパケットを監視することで生存確認を行います。
 
 **役割:**
+
 1. **生存確認:** Masterは一定期間Heartbeatが途絶えたデバイスを「ロスト」扱いとします。
 2. **リセット検知:** 既知のDeviceIDから異なるSession IDが送られてきた場合、デバイスが再起動したと判断し、初期化シーケンス（Definition Exchange -> Config）を再実行します。
 3. **ID衝突検知:** 異なる物理デバイスが同じDeviceIDを持つ場合、異なるSession IDが交互に観測されることでConflictを検知できます。
@@ -394,31 +395,31 @@ Offset | Size | Field              | Description
 0x02+L | 2    | Array Size         | 配列長 (0=非配列, >0=固定長配列)
 ```
 
-366: プリミティブ型の場合：
-367: 
-368: ```text
-369: Offset | Size | Field              | Description
-370: -------|------|--------------------|---------------------------------
-371: 0x00   | 1    | Type Kind          | 0=primitive
-372: 0x01   | 1    | Primitive Type     | 型ID (下表参照)
-373: ```
-374:
-375: **Primitive Type IDs:**
-376:
-377: | ID | Type | Size |
-378: |---|---|---|
-379: | 0x00 | bool | 1 |
-380: | 0x01 | int8 | 1 |
-381: | 0x02 | uint8 | 1 |
-382: | 0x03 | int16 | 2 |
-383: | 0x04 | uint16 | 2 |
-384: | 0x05 | int32 | 4 |
-385: | 0x06 | uint32 | 4 |
-386: | 0x07 | int64 | 8 |
-387: | 0x08 | uint64 | 8 |
-388: | 0x09 | float | 4 |
-389: | 0x0A | double | 8 |
-390: | 0x0B-0xFF | (Reserved) | - |
+プリミティブ型の場合：
+
+```text
+Offset | Size | Field              | Description
+-------|------|--------------------|---------------------------------
+0x00   | 1    | Type Kind          | 0=primitive
+0x01   | 1    | Primitive Type     | 型ID (下表参照)
+```
+
+**Primitive Type IDs:**
+
+| ID | Type | Size |
+|:---:|:---:|:---:|
+| 0x00 | bool | 1 |
+| 0x01 | int8 | 1 |
+| 0x02 | uint8 | 1 |
+| 0x03 | int16 | 2 |
+| 0x04 | uint16 | 2 |
+| 0x05 | int32 | 4 |
+| 0x06 | uint32 | 4 |
+| 0x07 | int64 | 8 |
+| 0x08 | uint64 | 8 |
+| 0x09 | float | 4 |
+| 0x0A | double | 8 |
+| 0x0B-0xFF | (Reserved) | - |
 
 ### B.4. メタデータ (Metadata)
 
