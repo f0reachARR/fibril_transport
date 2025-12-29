@@ -6,7 +6,7 @@
 CAN-FDの最大64byteという制約の中で、大きく分けて2つの転送モードを提供します。
 
 1.  **Fast Path (Standard ID)**: 制御周期に関わるリアルタイムデータ用。**分割不可**。
-2.  **Slow Path (Extended ID)**: 定義交換、パラメータ設定、サービスコール用。**分割転送（Fragmentation）**をサポート。
+2.  **Slow Path (Extended ID)**: ディスカバリ、定義交換、パラメータ設定、サービスコール用。**分割転送（Fragmentation）**をサポート。
 
 ---
 

@@ -23,12 +23,11 @@ ProtobufライクなDSL（定義ファイル）を用いることで、ファー
 
 ```text
 [28:24] 機能種別 (5-bit) - 最大32種類
-  - 0x00: Discovery (デバイス列挙)
+  - 0x00: Discovery / Management (デバイス管理)
   - 0x01: Definition Exchange (ノード定義の交換)
   - 0x02: Configuration (IDマップ配布)
   - 0x03: Service (汎用サービス / パラメータ)
-  - 0x04: Heartbeat (生存報告)
-  - 0x05-0x1F: (予約)
+  - 0x04-0x1F: (予約)
 [23:19] DeviceID (5-bit) - 最大32デバイス
   - 0x1F: ブロードキャスト用予約
 [18:14] NodeID (5-bit) - 1デバイス最大32ノード
@@ -183,17 +182,27 @@ ROSの標準メッセージ型と、FWの軽量な型を自動変換します。
 
 ### 7.1. Discovery (デバイス列挙)
 
-**目的:** バス上の全デバイスを発見する。
+**目的:** バス上の全デバイスを発見し、状態を監視する。
 
-1. **Master → Broadcast (DeviceID=0x1F):**
-   - Extended ID: `[機能=0x00][DevID=0x1F][NodeID=0x1F][Sub=0x0000]`
-   - Payload: 空（Discovery Request）
+#### 7.1.1. Heartbeat / Discovery Response (Device -> Master)
 
-2. **各Device → Master:**
-   - Extended ID: `[機能=0x00][DevID=自分のID][NodeID=0x1F][Sub=0x0000]`
-   - Payload: `[ノード数 (1byte)]`
+各デバイスは、**Feature=0x00, Sub=0x0000** を使用して、自身の情報を定期的に（例: 1Hz）ブロードキャストします。これはDiscoveryに対する応答としても機能します。
 
-**結果:** Masterは存在する全DeviceIDとそれぞれのノード数を把握。
+- **Extended ID:** `[機能=0x00][DevID=自分のID][NodeID=0x1F][Sub=0x0000]`
+- **Payload:** `[Status (1byte)][Session ID (4bytes)][Node Count (1byte)]`
+  - `Status`: 0=Init, 1=Active, 2=Error
+  - `Session ID`: 起動時にランダム生成される32bit整数
+  - `Node Count`: デバイスが持つノード数
+
+#### 7.1.2. Discovery Request (Master -> Broadcast)
+
+Masterは必要に応じて（起動時やデバイスロスト時）、明示的なDiscovery要求を送信します。
+
+- **Extended ID:** `[機能=0x00][DevID=0x1F][NodeID=0x1F][Sub=0x0001]`
+- **Payload:** 空（Discovery Request）
+- **動作:** これを受信した全デバイスは、即座にHeartbeat形式（Sub=0x0000）で応答します。
+
+**結果:** Masterは存在する全DeviceID、それぞれのノード数、およびSession IDによる再起動検知を一元的に管理します。
 
 ### 7.2. Definition Exchange (ノード定義の交換)
 
@@ -283,7 +292,7 @@ MasterはDeviceごとに以下を送信：
 設定完了後、通常動作に移行：
 
 - **Fast Path (Standard ID):** リアルタイム制御データの送受信
-- **Slow Path (Extended ID):** パラメータアクセスおよびサービスコール（機能=0x03）、Heartbeat（機能=0x04）
+- **Slow Path (Extended ID):** パラメータアクセスおよびサービスコール（機能=0x03）、Heartbeat（機能=0x00）
 
 ### 7.6. Heartbeat & Reliability
 
@@ -291,17 +300,12 @@ MasterはDeviceごとに以下を送信：
 
 #### 7.6.1. Heartbeat (Device -> Master)
 
-各デバイスは、自身の状態を定期的にブロードキャストします。
-
-- **Extended ID:** `[機能=0x04][DevID=X][NodeID=0x1F][Sub=0]`
-- **Payload:** `[Status (1byte)][Session ID (4bytes)]`
-  - `Status`: 0=Init, 1=Active, 2=Error
-  - `Session ID`: 起動時にランダム生成される32bit整数
+7.1.1項に統合されました。Masterは `Feature=0x00` のパケットを監視することで生存確認を行います。
 
 **役割:**
 1. **生存確認:** Masterは一定期間Heartbeatが途絶えたデバイスを「ロスト」扱いとします。
 2. **リセット検知:** 既知のDeviceIDから異なるSession IDが送られてきた場合、デバイスが再起動したと判断し、初期化シーケンス（Definition Exchange -> Config）を再実行します。
-3. **ID衝突検知:** 異なる物理デバイスが同じDeviceID（DIPスイッチ設定ミス等）を持つ場合、異なるSession IDが交互に観測されることでConflictを検知できます。Masterはエラーログを出力し、安全のためそのDeviceIDを無効化します。
+3. **ID衝突検知:** 異なる物理デバイスが同じDeviceIDを持つ場合、異なるSession IDが交互に観測されることでConflictを検知できます。
 
 #### 7.6.2. Reconnection policy
 
