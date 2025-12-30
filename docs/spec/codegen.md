@@ -4,7 +4,23 @@
 
 本ドキュメントは、Fibril IDLから**マイコン向けC++コード**を生成する際の仕様を定義します。マイコンの処理負荷とメモリ使用量を最小化することを最優先とし、複雑な処理はすべてMaster側で実行する設計方針を採用しています。
 
-**設計原則**:
+### 1.1. システム全体における位置づけ
+
+本仕様は、Fibril CAN Transport システムの一部を構成します。システム全体のフローについては、以下のドキュメントを参照してください：
+
+- **[main.md](./main.md)**: システム全体のアーキテクチャ、起動フロー、通信フェーズ
+- **[dsl.md](./dsl.md)**: Fibril IDL（インターフェース定義言語）の構文仕様
+- **[transport.md](./transport.md)**: FTP (Fibril Transport Protocol) の詳細仕様
+
+特に、本ドキュメントで説明するマイコンコードは、`main.md`で定義されている以下のフェーズで動作します：
+
+1. **Discovery** (機能=0x00): Masterがデバイスを検出
+2. **Definition Exchange** (機能=0x01): デバイスがノード定義をMasterに送信
+3. **Configuration** (機能=0x02): **本ドキュメントの主要部分** - MasterがIDマップをデバイスに配布
+4. **Activation**: 通信開始
+5. **Runtime**: Fast Path (Standard ID) でpub/sub、Slow Path (Extended ID) でservice通信
+
+### 1.2. 設計原則
 
 1. **Zero-Copy受信**: 受信したCANフレームを直接メモリに配置
 2. **Direct Memory Access**: アドレス計算や再配置処理を不要にする
@@ -1298,6 +1314,351 @@ Async Context: 9 bytes (AsyncServiceContext × 3)
 - ✅ **柔軟な処理時間**: 即座に完了する場合も、長時間かかる場合も同じコードで対応
 - ⚠️ **メモリ増加**: すべてのサービスに非同期コンテキストが必要（3 bytes × サービス数）
 - ⚠️ **応答忘れのリスク**: ユーザーが明示的にResponse送信を呼ぶ必要がある
+
+---
+
+## 13. FibrilDevice の実装
+
+### 13.1. 概要
+
+`FibrilDevice`クラスは、生成された個々のノードクラスを統合し、CAN通信とノードのライフサイクルを管理します。
+
+**主な責務**:
+
+1. ノードの登録とNodeID自動割り当て
+2. CAN受信フレームの適切なノードへのディスパッチ
+3. Configuration受信とIDマップ設定
+4. 定周期pub送信の管理
+5. Service要求の処理とResponse送信
+
+### 13.2. クラス定義
+
+```cpp
+class FibrilDevice {
+public:
+    // 最大ノード数（コンパイル時定数）
+    static constexpr uint8_t MAX_NODES = 32;
+    
+    FibrilDevice();
+    
+    // ノード登録（呼び出し順でNodeID決定）
+    template<typename NodeT>
+    bool register_node(NodeT* node);
+    
+    // 初期化
+    void init();
+    
+    // 定期処理（メインループから呼ぶ）
+    void process();
+    
+    // CAN受信ハンドラ（CANドライバから呼ばれる）
+    void on_can_receive(uint32_t can_id, bool is_extended, 
+                       uint8_t* payload, uint8_t len);
+    
+private:
+    // ノード抽象基底クラス
+    class INode {
+    public:
+        virtual ~INode() = default;
+        virtual void on_can_receive(uint16_t can_id, uint8_t* payload, uint8_t len) = 0;
+        virtual void on_service_request(uint16_t transaction_id, uint8_t service_id,
+                                       uint8_t* request_data, uint8_t request_len) = 0;
+        virtual void configure_rx_mapping(uint16_t address, uint16_t can_id,
+                                         uint8_t offset, uint8_t length, bool is_completion) = 0;
+        virtual void configure_tx_mapping(uint16_t address, uint16_t can_id,
+                                         uint8_t offset, uint8_t length, bool is_completion) = 0;
+    };
+    
+    // 登録されたノード
+    INode* nodes_[MAX_NODES];
+    uint8_t node_count_ = 0;
+    
+    // デバイスID（Discoveryで取得）
+    uint8_t device_id_ = 0;
+    
+    // CAN送信関数（ユーザーが実装）
+    void (*can_send_fn_)(uint32_t can_id, bool is_extended, uint8_t* data, uint8_t len) = nullptr;
+    
+    // Configuration処理
+    void handle_configuration(uint8_t node_id, uint8_t* payload, uint8_t len);
+    
+    // Fast Path (Standard ID) のディスパッチ
+    void dispatch_standard_id(uint16_t can_id, uint8_t* payload, uint8_t len);
+    
+    // Slow Path (Extended ID) のディスパッチ
+    void dispatch_extended_id(uint32_t can_id, uint8_t* payload, uint8_t len);
+};
+```
+
+### 13.3. ノード登録とNodeID割り当て
+
+```cpp
+template<typename NodeT>
+bool FibrilDevice::register_node(NodeT* node) {
+    if (node_count_ >= MAX_NODES) {
+        return false;  // 最大数超過
+    }
+    
+    // ノードを登録（NodeID = 呼び出し順）
+    nodes_[node_count_] = static_cast<INode*>(node);
+    node_count_++;
+    
+    return true;
+}
+```
+
+**NodeID決定ルール**:
+
+- 最初に登録されたノード: NodeID = 0
+- 2番目に登録されたノード: NodeID = 1
+- 以降同様
+
+### 13.4. CAN受信とディスパッチ
+
+```cpp
+void FibrilDevice::on_can_receive(uint32_t can_id, bool is_extended,
+                                  uint8_t* payload, uint8_t len) {
+    if (is_extended) {
+        // Slow Path: Extended ID
+        dispatch_extended_id(can_id, payload, len);
+    } else {
+        // Fast Path: Standard ID
+        dispatch_standard_id(can_id & 0x7FF, payload, len);
+    }
+}
+
+void FibrilDevice::dispatch_standard_id(uint16_t can_id, uint8_t* payload, uint8_t len) {
+    // すべてのノードに対してIDマッピングを試行
+    for (uint8_t i = 0; i < node_count_; i++) {
+        nodes_[i]->on_can_receive(can_id, payload, len);
+        // 各ノードは自分のIDマップに一致する場合のみ処理
+    }
+}
+
+void FibrilDevice::dispatch_extended_id(uint32_t can_id, uint8_t* payload, uint8_t len) {
+    // Extended IDビットフィールドを抽出
+    uint8_t feature = (can_id >> 24) & 0x1F;
+    uint8_t dev_id = (can_id >> 19) & 0x1F;
+    uint8_t node_id = (can_id >> 14) & 0x1F;
+    uint16_t sub = can_id & 0x3FFF;
+    
+    // 自デバイス宛でなければ無視
+    if (dev_id != device_id_ && dev_id != 0x1F) {
+        return;
+    }
+    
+    switch (feature) {
+        case 0x02:  // Configuration
+            if (node_id < node_count_) {
+                handle_configuration(node_id, payload, len);
+            }
+            break;
+            
+        case 0x03:  // Service
+            if (node_id < node_count_) {
+                // FTP Header解析（簡略版）
+                uint8_t ftp_header = payload[0];
+                uint8_t service_id = payload[1];
+                uint8_t* request_data = &payload[2];
+                uint8_t request_len = len - 2;
+                
+                nodes_[node_id]->on_service_request(sub, service_id, 
+                                                    request_data, request_len);
+            }
+            break;
+            
+        default:
+            // 他の機能は未実装
+            break;
+    }
+}
+```
+
+### 13.5. Configuration処理
+
+```cpp
+void FibrilDevice::handle_configuration(uint8_t node_id, uint8_t* payload, uint8_t len) {
+    // IDマップエントリをパース（9 bytes/entry）
+    for (uint8_t offset = 0; offset + 9 <= len; offset += 9) {
+        uint8_t  target_node_id = payload[offset + 0];
+        uint16_t address        = (payload[offset + 1] << 8) | payload[offset + 2];
+        uint16_t standard_id    = (payload[offset + 3] << 8) | payload[offset + 4];
+        uint8_t  frame_offset   = payload[offset + 5];
+        uint8_t  length         = payload[offset + 6];
+        bool     is_completion  = payload[offset + 7];
+        uint8_t  direction      = payload[offset + 8];
+        
+        // 対象ノードが範囲内か確認
+        if (target_node_id >= node_count_) {
+            continue;
+        }
+        
+        // 該当ノードにマッピングを設定
+        if (direction == 0) {  // RX
+            nodes_[target_node_id]->configure_rx_mapping(address, standard_id,
+                                                          frame_offset, length, is_completion);
+        } else {  // TX
+            nodes_[target_node_id]->configure_tx_mapping(address, standard_id,
+                                                          frame_offset, length, is_completion);
+        }
+    }
+}
+```
+
+### 13.6. 定周期送信
+
+```cpp
+void FibrilDevice::process() {
+    // すべてのノードの送信データを集約
+    // 同じCAN IDにマップされたデータをパッキング
+    
+    uint8_t payload[64];
+    uint16_t current_id = 0;
+    uint8_t payload_len = 0;
+    
+    for (uint8_t node_idx = 0; node_idx < node_count_; node_idx++) {
+        INode* node = nodes_[node_idx];
+        
+        // 各ノードの送信マッピングを走査
+        for (auto& mapping : node->get_tx_mappings()) {
+            if (mapping.can_id != current_id && payload_len > 0) {
+                // 前のIDのフレームを送信
+                can_send_fn_(current_id, false, payload, payload_len);
+                payload_len = 0;
+            }
+            
+            current_id = mapping.can_id;
+            
+            // ノードのdataからコピー
+            uint8_t* src = node->get_data_ptr() + mapping.address;
+            memcpy(&payload[mapping.offset], src, mapping.length);
+            payload_len = max(payload_len, mapping.offset + mapping.length);
+        }
+    }
+    
+    // 最後のフレームを送信
+    if (payload_len > 0) {
+        can_send_fn_(current_id, false, payload, payload_len);
+    }
+}
+```
+
+### 13.7. 完全な使用例
+
+```cpp
+#include "fibril_device.hpp"
+#include "motor_node.hpp"
+#include "sensor_node.hpp"
+
+// CAN送信コールバック（ユーザー実装）
+void can_send_callback(uint32_t can_id, bool is_extended, uint8_t* data, uint8_t len) {
+    if (is_extended) {
+        CAN_SendExtended(can_id, data, len);
+    } else {
+        CAN_SendStandard(can_id & 0x7FF, data, len);
+    }
+}
+
+int main() {
+    // ノードインスタンス
+    MotorNode motor1;
+    MotorNode motor2;
+    SensorNode sensor;
+    
+    // デバイスインスタンス
+    FibrilDevice device;
+    
+    // CAN送信コールバック設定
+    device.set_can_send_callback(can_send_callback);
+    
+    // ノード登録（この順序でNodeID決定）
+    device.register_node(&motor1);  // NodeID = 0
+    device.register_node(&motor2);  // NodeID = 1
+    device.register_node(&sensor);  // NodeID = 2
+    
+    // 初期化
+    device.init();
+    
+    // メインループ
+    while (1) {
+        // 定周期処理（pub送信など）
+        device.process();
+        
+        // CAN受信（割り込みまたはポーリング）
+        if (CAN_HasMessage()) {
+            uint32_t can_id;
+            bool is_extended;
+            uint8_t data[64];
+            uint8_t len;
+            
+            CAN_Receive(&can_id, &is_extended, data, &len);
+            device.on_can_receive(can_id, is_extended, data, len);
+        }
+        
+        // 他の処理...
+        delay_ms(10);
+    }
+    
+    return 0;
+}
+```
+
+### 13.8. ノード基底クラスの実装
+
+生成される各ノードクラスは`INode`インターフェースを実装します：
+
+```cpp
+// motor_node.hpp (自動生成)
+class MotorNode : public FibrilDevice::INode {
+public:
+    // データ構造
+    struct __attribute__((packed)) {
+        float cmd_velocity;
+        float current_velocity;
+    } data;
+    
+    // IDマッピング
+    IDMapping rx_map[MAX_RX_MAPPINGS];
+    IDMapping tx_map[MAX_TX_MAPPINGS];
+    uint8_t rx_mapping_count = 0;
+    uint8_t tx_mapping_count = 0;
+    
+    // INodeインターフェース実装
+    void on_can_receive(uint16_t can_id, uint8_t* payload, uint8_t len) override {
+        // セクション3.3の実装
+    }
+    
+    void on_service_request(uint16_t transaction_id, uint8_t service_id,
+                           uint8_t* request_data, uint8_t request_len) override {
+        // セクション12.11の実装
+    }
+    
+    void configure_rx_mapping(uint16_t address, uint16_t can_id,
+                             uint8_t offset, uint8_t length, bool is_completion) override {
+        if (rx_mapping_count < MAX_RX_MAPPINGS) {
+            rx_map[rx_mapping_count].address = address;
+            rx_map[rx_mapping_count].can_id = can_id;
+            rx_map[rx_mapping_count].offset = offset;
+            rx_map[rx_mapping_count].length = length;
+            rx_map[rx_mapping_count].is_completion = is_completion;
+            rx_mapping_count++;
+        }
+    }
+    
+    void configure_tx_mapping(uint16_t address, uint16_t can_id,
+                             uint8_t offset, uint8_t length, bool is_completion) override {
+        // 同様の実装
+    }
+    
+    uint8_t* get_data_ptr() override {
+        return (uint8_t*)&data;
+    }
+    
+    const std::vector<IDMapping>& get_tx_mappings() const override {
+        return std::vector<IDMapping>(tx_map, tx_map + tx_mapping_count);
+    }
+};
+```
 
 ---
 

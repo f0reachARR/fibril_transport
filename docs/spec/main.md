@@ -271,23 +271,56 @@ MasterはDeviceごとに以下を送信：
    - Extended ID: `[機能=0x02][DevID=X][NodeID=Y][Sub=シーケンス番号]`
    - Payload: IDマップ情報
 
-**IDマップ情報の例（受信設定）:**
+**IDマップ情報フォーマット（統一仕様）:**
 
 ```text
-[NodeID (1byte)][Address (1byte)][Standard ID (2byte)][Offset (1byte)][Length (1byte)]
-→ "NodeID YのAddress Zから始まるデータは、Standard ID 0x100のOffset 4から8byteで受信せよ"
+[NodeID (1)] [Address (2)] [StandardID (2)] [Offset (1)] [Length (1)] [IsCompletion (1)] [Direction (1)]
 ```
 
-デバイス側の負担軽減のため、複数フィールドに跨って送受信する場合がある。
+- **NodeID (1 byte)**: 対象ノードID（0-31）
+- **Address (2 bytes)**: マイコン側のメモリアドレス（構造体内オフセット、最大65535 bytes対応）
+- **StandardID (2 bytes)**: 使用するCAN Standard ID（0-2047）
+- **Offset (1 byte)**: CANフレーム内のデータ開始位置（0-63）
+- **Length (1 byte)**: データサイズ（1-64 bytes）
+- **IsCompletion (1 byte)**: 完了判定フラグ
+  - `1`: このフレーム受信で完了（単一フレーム、または複数フレームの最大ID）
+  - `0`: まだ続きがある（複数フレームの途中）
+- **Direction (1 byte)**: データ方向
+  - `0`: RX（Master → Device）
+  - `1`: TX（Device → Master）
 
-**IDマップ情報の例（送信設定）:**
+**例1: 単一フレームの受信設定**
 
 ```text
-[NodeID (1byte)][Address (1byte)][Standard ID (2byte)][Offset (1byte)]
-→ "NodeID YのAddress Zから始まるデータは、Standard ID 0x200のOffset 0へ送信せよ"
+NodeID=5, Address=0x0008, StandardID=0x100, Offset=0, Length=8, IsCompletion=1, Direction=0
+→ "ノード5のアドレス0x0008から始まるデータは、Standard ID 0x100のオフセット0から8byteで受信し、このフレームで完了"
 ```
 
-複数のPort/Addressがある場合、複数のフレームで送信。
+**例2: 複数フレームの受信設定（70 bytes → 64+6に分割）**
+
+```text
+# フレーム1: 最初の64 bytes
+NodeID=5, Address=0x0000, StandardID=0x100, Offset=0, Length=64, IsCompletion=0, Direction=0
+
+# フレーム2: 残りの6 bytes（最大ID、完了判定）
+NodeID=5, Address=0x0040, StandardID=0x101, Offset=0, Length=6, IsCompletion=1, Direction=0
+```
+
+**例3: クロスノードパッキング（送信）**
+
+```text
+# 3つのノードのデータを1つのCANフレームにパッキング
+NodeID=0, Address=0x04, StandardID=0x200, Offset=0, Length=4, IsCompletion=1, Direction=1
+NodeID=1, Address=0x04, StandardID=0x200, Offset=4, Length=4, IsCompletion=1, Direction=1
+NodeID=2, Address=0x04, StandardID=0x200, Offset=8, Length=4, IsCompletion=1, Direction=1
+→ "3つのノードのデータをStandard ID 0x200の1フレームで送信"
+```
+
+**注意事項:**
+
+- 複数のPort/Addressがある場合、複数のIDマップエントリを送信
+- マイコン側の負担を最小化するため、Master側で複雑なパッキング計算を実施
+- 詳細な実装仕様は `codegen.md` を参照
 
 ### 7.5. Activation (通信開始)
 
