@@ -275,14 +275,16 @@ MasterはDeviceごとに以下を送信：
 
 ```text
 [NodeID (1byte)][Address (1byte)][Standard ID (2byte)][Offset (1byte)][Length (1byte)]
-→ "NodeID YのAddress Zのデータは、Standard ID 0x100のOffset 4から8byteで受信せよ"
+→ "NodeID YのAddress Zから始まるデータは、Standard ID 0x100のOffset 4から8byteで受信せよ"
 ```
+
+デバイス側の負担軽減のため、複数フィールドに跨って送受信する場合がある。
 
 **IDマップ情報の例（送信設定）:**
 
 ```text
 [NodeID (1byte)][Address (1byte)][Standard ID (2byte)][Offset (1byte)]
-→ "NodeID YのAddress Zのデータは、Standard ID 0x200のOffset 0へ送信せよ"
+→ "NodeID YのAddress Zから始まるデータは、Standard ID 0x200のOffset 0へ送信せよ"
 ```
 
 複数のPort/Addressがある場合、複数のフレームで送信。
