@@ -105,7 +105,11 @@ struct Twist2D {
   ASSERT_EQ(ast.structs[0].attributes.size(), 1);
   EXPECT_EQ(ast.structs[0].attributes[0].name, "ros_type");
   ASSERT_EQ(ast.structs[0].attributes[0].arguments.size(), 1);
-  EXPECT_EQ(ast.structs[0].attributes[0].arguments[0], "geometry_msgs/msg/Twist");
+  EXPECT_EQ(
+    ast.structs[0].attributes[0].arguments[0].kind, fibril::AttributeValue::Kind::Identifier);
+  auto ros_type_arg = ast.structs[0].attributes[0].getStringArg(0);
+  ASSERT_TRUE(ros_type_arg.has_value());
+  EXPECT_EQ(ros_type_arg.value(), "geometry_msgs/msg/Twist");
 
   // フィールド属性
   ASSERT_EQ(ast.structs[0].fields.size(), 2);

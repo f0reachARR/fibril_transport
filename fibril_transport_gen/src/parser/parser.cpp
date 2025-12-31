@@ -25,7 +25,7 @@ SourceFile Parser::parse(const std::string & file_path)
 {
   errors_.clear();
 
-  //  ファイルを読み込み
+  // ファイルを読み込み
   std::ifstream file(file_path);
   if (!file.is_open()) {
     reportError("Failed to open file: " + file_path, 0, 0);
@@ -36,15 +36,22 @@ SourceFile Parser::parse(const std::string & file_path)
   buffer << file.rdbuf();
   std::string source = buffer.str();
 
+  return parseFromString(source, file_path);
+}
+
+SourceFile Parser::parseFromString(const std::string & source, const std::string & virtual_path)
+{
+  errors_.clear();
+
   // Tree-sitterでパース
   TSTree * tree = ts_parser_parse_string(parser_, nullptr, source.c_str(), source.length());
 
   if (!tree) {
-    reportError("Failed to parse file", 0, 0);
+    reportError("Failed to parse source", 0, 0);
     return SourceFile{};
   }
 
-  SourceFile result = parseTree(tree, source, file_path);
+  SourceFile result = parseTree(tree, source, virtual_path);
   ts_tree_delete(tree);
 
   return result;
@@ -309,18 +316,23 @@ Attribute Parser::parseAttribute(TSNode node, const std::string & source)
         TSNode arg = ts_node_child(child, j);
         std::string arg_type = ts_node_type(arg);
         if (arg_type == "string_literal") {
-          attr.arguments.push_back(unquoteString(getNodeText(arg, source)));
-        } else if (arg_type == "qualified_identifier" || arg_type == "number_literal") {
-          attr.arguments.push_back(getNodeText(arg, source));
+          attr.arguments.push_back(
+            AttributeValue::makeString(unquoteString(getNodeText(arg, source))));
+        } else if (arg_type == "number_literal") {
+          std::string num_str = getNodeText(arg, source);
+          attr.arguments.push_back(AttributeValue::makeNumber(std::stod(num_str)));
+        } else if (arg_type == "qualified_identifier") {
+          attr.arguments.push_back(AttributeValue::makeIdentifier(getNodeText(arg, source)));
         }
       }
-    } else if (
-      type == "string_literal" || type == "qualified_identifier" || type == "number_literal") {
-      if (type == "string_literal") {
-        attr.arguments.push_back(unquoteString(getNodeText(child, source)));
-      } else {
-        attr.arguments.push_back(getNodeText(child, source));
-      }
+    } else if (type == "string_literal") {
+      attr.arguments.push_back(
+        AttributeValue::makeString(unquoteString(getNodeText(child, source))));
+    } else if (type == "number_literal") {
+      std::string num_str = getNodeText(child, source);
+      attr.arguments.push_back(AttributeValue::makeNumber(std::stod(num_str)));
+    } else if (type == "qualified_identifier") {
+      attr.arguments.push_back(AttributeValue::makeIdentifier(getNodeText(child, source)));
     }
   }
 

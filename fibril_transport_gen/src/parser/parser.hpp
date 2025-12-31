@@ -18,6 +18,10 @@ public:
   // 単一ファイルのパース
   SourceFile parse(const std::string & file_path);
 
+  // 文字列から直接パース（LSP開発などに有用）
+  SourceFile parseFromString(
+    const std::string & source, const std::string & virtual_path = "<string>");
+
   // エラーメッセージ
   const std::vector<std::string> & getErrors() const { return errors_; }
 

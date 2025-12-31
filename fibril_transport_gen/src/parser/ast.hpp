@@ -1,9 +1,11 @@
 #pragma once
 
+#include <filesystem>
 #include <map>
 #include <memory>
 #include <optional>
 #include <string>
+#include <variant>
 #include <vector>
 
 namespace fibril
@@ -48,13 +50,34 @@ struct Type
   static Type makeArray(Type elem_type, size_t size, size_t line = 0, size_t col = 0);
 };
 
+// 属性の引数値
+struct AttributeValue
+{
+  enum class Kind { String, Number, Identifier } kind;
+
+  std::variant<std::string, double> value;
+
+  static AttributeValue makeString(const std::string & s);
+  static AttributeValue makeNumber(double n);
+  static AttributeValue makeIdentifier(const std::string & id);
+
+  std::string asString() const;
+  double asNumber() const;
+};
+
 // 属性
 struct Attribute
 {
   std::string name;
-  std::vector<std::string> arguments;
+  std::vector<AttributeValue> arguments;
   size_t line;
   size_t column;
+
+  // ヘルパー：最初の引数を文字列として取得
+  std::optional<std::string> getStringArg(size_t index = 0) const;
+
+  // ヘルパー：最初の引数を数値として取得
+  std::optional<double> getNumberArg(size_t index = 0) const;
 };
 
 // フィールド宣言（struct内）

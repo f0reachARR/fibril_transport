@@ -35,12 +35,72 @@ Type Type::makeArray(Type elem_type, size_t size, size_t line, size_t col)
   return t;
 }
 
+// AttributeValue factory methods
+AttributeValue AttributeValue::makeString(const std::string & s)
+{
+  AttributeValue v;
+  v.kind = Kind::String;
+  v.value = s;
+  return v;
+}
+
+AttributeValue AttributeValue::makeNumber(double n)
+{
+  AttributeValue v;
+  v.kind = Kind::Number;
+  v.value = n;
+  return v;
+}
+
+AttributeValue AttributeValue::makeIdentifier(const std::string & id)
+{
+  AttributeValue v;
+  v.kind = Kind::Identifier;
+  v.value = id;
+  return v;
+}
+
+std::string AttributeValue::asString() const
+{
+  if (std::holds_alternative<std::string>(value)) {
+    return std::get<std::string>(value);
+  }
+  return "";
+}
+
+double AttributeValue::asNumber() const
+{
+  if (std::holds_alternative<double>(value)) {
+    return std::get<double>(value);
+  }
+  return 0.0;
+}
+
+// Attribute helper methods
+std::optional<std::string> Attribute::getStringArg(size_t index) const
+{
+  if (index < arguments.size()) {
+    return arguments[index].asString();
+  }
+  return std::nullopt;
+}
+
+std::optional<double> Attribute::getNumberArg(size_t index) const
+{
+  if (index < arguments.size()) {
+    if (arguments[index].kind == AttributeValue::Kind::Number) {
+      return arguments[index].asNumber();
+    }
+  }
+  return std::nullopt;
+}
+
 // StructDefinition
 std::optional<std::string> StructDefinition::getRosType() const
 {
   for (const auto & attr : attributes) {
-    if (attr.name == "ros_type" && !attr.arguments.empty()) {
-      return attr.arguments[0];
+    if (attr.name == "ros_type") {
+      return attr.getStringArg(0);
     }
   }
   return std::nullopt;
