@@ -26,44 +26,51 @@ enum class PrimitiveType {
   Double
 };
 
-// 型指定
+// 前方宣言
+struct Type;
+
+// 構造体型
+struct StructType
+{
+  std::string name;
+  size_t line;
+  size_t column;
+};
+
+// 配列型
+struct ArrayType
+{
+  std::unique_ptr<Type> element_type;
+  size_t size;
+  size_t line;
+  size_t column;
+};
+
+// 型指定（variant版）
 struct Type
 {
-  enum class Kind { Primitive, Struct, Array } kind;
-
-  // Primitive型の場合
-  PrimitiveType primitive_type;
-
-  // Struct型の場合
-  std::string struct_name;
-
-  // Array型の場合
-  std::unique_ptr<Type> element_type;
-  size_t array_size;
-
-  // ソース位置情報
+  std::variant<PrimitiveType, StructType, ArrayType> value;
   size_t line;
   size_t column;
 
+  // ファクトリーメソッド
   static Type makePrimitive(PrimitiveType ptype, size_t line = 0, size_t col = 0);
   static Type makeStruct(const std::string & name, size_t line = 0, size_t col = 0);
   static Type makeArray(Type elem_type, size_t size, size_t line = 0, size_t col = 0);
+
+  // 型チェックヘルパー
+  bool isPrimitive() const { return std::holds_alternative<PrimitiveType>(value); }
+  bool isStruct() const { return std::holds_alternative<StructType>(value); }
+  bool isArray() const { return std::holds_alternative<ArrayType>(value); }
+
+  // アクセサ
+  const PrimitiveType & asPrimitive() const { return std::get<PrimitiveType>(value); }
+  const StructType & asStruct() const { return std::get<StructType>(value); }
+  const ArrayType & asArray() const { return std::get<ArrayType>(value); }
 };
 
-// 属性の引数値
-struct AttributeValue
-{
-  enum class Kind { String, Number, Identifier } kind;
-
-  std::variant<std::string, double> value;
-
-  static AttributeValue makeString(const std::string & s);
-  static AttributeValue makeNumber(double n);
-  static AttributeValue makeIdentifier(const std::string & id);
-
-  std::string asString() const;
-  double asNumber() const;
-};
+// 属性の引数値（variant版 - kindフィールド不要）
+using AttributeValue = std::variant<std::string, double>;
 
 // 属性
 struct Attribute
@@ -73,10 +80,10 @@ struct Attribute
   size_t line;
   size_t column;
 
-  // ヘルパー：最初の引数を文字列として取得
+  // ヘルパー：引数を文字列として取得
   std::optional<std::string> getStringArg(size_t index = 0) const;
 
-  // ヘルパー：最初の引数を数値として取得
+  // ヘルパー：引数を数値として取得
   std::optional<double> getNumberArg(size_t index = 0) const;
 };
 
@@ -104,22 +111,39 @@ struct StructDefinition
   std::optional<std::string> getRosType() const;
 };
 
-// Port定義
-struct Port
+// Pub Port
+struct PubPort
 {
-  enum class Direction { Pub, Sub, Service } direction;
-
   std::vector<Attribute> attributes;
   std::string name;
   Type data_type;
-
-  // Serviceの場合
-  std::optional<Type> request_type;
-  std::optional<Type> response_type;
-
   size_t line;
   size_t column;
 };
+
+// Sub Port
+struct SubPort
+{
+  std::vector<Attribute> attributes;
+  std::string name;
+  Type data_type;
+  size_t line;
+  size_t column;
+};
+
+// Service Port
+struct ServicePort
+{
+  std::vector<Attribute> attributes;
+  std::string name;
+  Type request_type;
+  Type response_type;
+  size_t line;
+  size_t column;
+};
+
+// Port定義（variant版 - Directionフィールド不要）
+using Port = std::variant<PubPort, SubPort, ServicePort>;
 
 // Node定義
 struct NodeDefinition

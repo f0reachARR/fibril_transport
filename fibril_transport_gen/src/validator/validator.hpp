@@ -70,14 +70,14 @@ private:
   // 型解決
   bool resolveType(const Type & type, const SourceFile & source);
 
+  // 型名取得ヘルパー
+  std::string getTypeName(const Type & type);
+
   // 構造体の検証
   bool validateStruct(const StructDefinition & struct_def, const SourceFile & source);
 
   // ノードの検証
   bool validateNode(const NodeDefinition & node_def, const SourceFile & source);
-
-  // ポートの検証
-  bool validatePort(const Port & port, const SourceFile & source);
 
   // 循環参照チェック
   bool checkCircularReference(

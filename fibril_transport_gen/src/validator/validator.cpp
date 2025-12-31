@@ -40,37 +40,37 @@ size_t TypeSizeCalculator::getPrimitiveSize(PrimitiveType type)
 
 size_t TypeSizeCalculator::calculateSize(const Type & type, const SourceFile & source)
 {
-  switch (type.kind) {
-    case Type::Kind::Primitive:
-      return getPrimitiveSize(type.primitive_type);
+  return std::visit(
+    [&](const auto & t) -> size_t {
+      using T = std::decay_t<decltype(t)>;
 
-    case Type::Kind::Array:
-      if (type.element_type) {
-        return calculateSize(*type.element_type, source) * type.array_size;
-      }
-      return 0;
+      if constexpr (std::is_same_v<T, PrimitiveType>) {
+        return getPrimitiveSize(t);
+      } else if constexpr (std::is_same_v<T, StructType>) {
+        // キャッシュチェック
+        auto it = size_cache_.find(t.name);
+        if (it != size_cache_.end()) {
+          return it->second;
+        }
 
-    case Type::Kind::Struct: {
-      // キャッシュチェック
-      auto it = size_cache_.find(type.struct_name);
-      if (it != size_cache_.end()) {
-        return it->second;
-      }
+        const StructDefinition * struct_def = source.findStruct(t.name);
+        if (!struct_def) {
+          return 0;
+        }
 
-      // 構造体を検索
-      const StructDefinition * struct_def = source.findStruct(type.struct_name);
-      if (!struct_def) {
+        size_t size = calculateStructSize(*struct_def, source);
+        size_cache_[t.name] = size;
+        return size;
+      } else if constexpr (std::is_same_v<T, ArrayType>) {
+        if (t.element_type) {
+          return calculateSize(*t.element_type, source) * t.size;
+        }
         return 0;
       }
 
-      size_t size = calculateStructSize(*struct_def, source);
-      size_cache_[type.struct_name] = size;
-      return size;
-    }
-
-    default:
       return 0;
-  }
+    },
+    type.value);
 }
 
 size_t TypeSizeCalculator::calculateStructSize(
@@ -178,9 +178,9 @@ bool Validator::resolveTypeReferences(const SourceFile & source)
   for (const auto & struct_def : source.structs) {
     for (const auto & field : struct_def.fields) {
       if (!resolveType(field.type, source)) {
+        std::string type_name = getTypeName(field.type);
         reportError(
-          "Unknown type: '" + field.type.struct_name + "'", field.line, field.column,
-          source.file_path);
+          "Unknown type: '" + type_name + "'", field.line, field.column, source.file_path);
         success = false;
       }
     }
@@ -189,26 +189,38 @@ bool Validator::resolveTypeReferences(const SourceFile & source)
   // ノードのポート型を検証
   for (const auto & node_def : source.nodes) {
     for (const auto & port : node_def.ports) {
-      if (!resolveType(port.data_type, source)) {
-        reportError(
-          "Unknown type in port '" + port.name + "': '" + port.data_type.struct_name + "'",
-          port.line, port.column, source.file_path);
-        success = false;
-      }
+      success &= std::visit(
+        [&](const auto & p) -> bool {
+          using T = std::decay_t<decltype(p)>;
 
-      // サービスの要求/応答型
-      if (port.request_type && !resolveType(*port.request_type, source)) {
-        reportError(
-          "Unknown request type in service '" + port.name + "'", port.line, port.column,
-          source.file_path);
-        success = false;
-      }
-      if (port.response_type && !resolveType(*port.response_type, source)) {
-        reportError(
-          "Unknown response type in service '" + port.name + "'", port.line, port.column,
-          source.file_path);
-        success = false;
-      }
+          if constexpr (std::is_same_v<T, PubPort> || std::is_same_v<T, SubPort>) {
+            if (!resolveType(p.data_type, source)) {
+              std::string type_name = getTypeName(p.data_type);
+              reportError(
+                "Unknown type in port '" + p.name + "': '" + type_name + "'", p.line, p.column,
+                source.file_path);
+              return false;
+            }
+          } else if constexpr (std::is_same_v<T, ServicePort>) {
+            if (!resolveType(p.request_type, source)) {
+              std::string type_name = getTypeName(p.request_type);
+              reportError(
+                "Unknown request type in service '" + p.name + "': '" + type_name + "'", p.line,
+                p.column, source.file_path);
+              return false;
+            }
+            if (!resolveType(p.response_type, source)) {
+              std::string type_name = getTypeName(p.response_type);
+              reportError(
+                "Unknown response type in service '" + p.name + "': '" + type_name + "'", p.line,
+                p.column, source.file_path);
+              return false;
+            }
+          }
+
+          return true;
+        },
+        port);
     }
   }
 
@@ -217,22 +229,43 @@ bool Validator::resolveTypeReferences(const SourceFile & source)
 
 bool Validator::resolveType(const Type & type, const SourceFile & source)
 {
-  switch (type.kind) {
-    case Type::Kind::Primitive:
-      return true;
+  return std::visit(
+    [&](const auto & t) -> bool {
+      using T = std::decay_t<decltype(t)>;
 
-    case Type::Kind::Array:
-      if (type.element_type) {
-        return resolveType(*type.element_type, source);
+      if constexpr (std::is_same_v<T, PrimitiveType>) {
+        return true;
+      } else if constexpr (std::is_same_v<T, StructType>) {
+        return defined_types_.find(t.name) != defined_types_.end();
+      } else if constexpr (std::is_same_v<T, ArrayType>) {
+        if (t.element_type) {
+          return resolveType(*t.element_type, source);
+        }
+        return false;
       }
-      return false;
 
-    case Type::Kind::Struct:
-      return defined_types_.find(type.struct_name) != defined_types_.end();
-
-    default:
       return false;
-  }
+    },
+    type.value);
+}
+
+std::string Validator::getTypeName(const Type & type)
+{
+  return std::visit(
+    [](const auto & t) -> std::string {
+      using T = std::decay_t<decltype(t)>;
+
+      if constexpr (std::is_same_v<T, PrimitiveType>) {
+        return "<primitive>";
+      } else if constexpr (std::is_same_v<T, StructType>) {
+        return t.name;
+      } else if constexpr (std::is_same_v<T, ArrayType>) {
+        return "<array>";
+      }
+
+      return "<unknown>";
+    },
+    type.value);
 }
 
 bool Validator::checkSemantics(const SourceFile & source)
@@ -300,38 +333,18 @@ bool Validator::validateNode(const NodeDefinition & node_def, const SourceFile &
   // ポート名の重複チェック
   std::set<std::string> port_names;
   for (const auto & port : node_def.ports) {
-    if (port_names.find(port.name) != port_names.end()) {
+    std::string port_name = std::visit([](const auto & p) { return p.name; }, port);
+
+    if (port_names.find(port_name) != port_names.end()) {
+      auto [line, column] =
+        std::visit([](const auto & p) { return std::make_pair(p.line, p.column); }, port);
+
       reportError(
-        "Duplicate port name: '" + port.name + "' in node '" + node_def.name + "'", port.line,
-        port.column, source.file_path);
-      return false;
-    }
-    port_names.insert(port.name);
-
-    if (!validatePort(port, source)) {
-      return false;
-    }
-  }
-
-  return true;
-}
-
-bool Validator::validatePort(const Port & port, const SourceFile & source)
-{
-  // サービスポートの検証
-  if (port.direction == Port::Direction::Service) {
-    if (!port.request_type) {
-      reportError(
-        "Service port '" + port.name + "' missing request type", port.line, port.column,
+        "Duplicate port name: '" + port_name + "' in node '" + node_def.name + "'", line, column,
         source.file_path);
       return false;
     }
-    if (!port.response_type) {
-      reportError(
-        "Service port '" + port.name + "' missing response type", port.line, port.column,
-        source.file_path);
-      return false;
-    }
+    port_names.insert(port_name);
   }
 
   return true;
@@ -340,30 +353,36 @@ bool Validator::validatePort(const Port & port, const SourceFile & source)
 bool Validator::checkCircularReference(
   const std::string & struct_name, const SourceFile & source, std::set<std::string> & visiting)
 {
-  // 既に訪問中なら循環参照
   if (visiting.find(struct_name) != visiting.end()) {
     return false;
   }
 
   const StructDefinition * struct_def = source.findStruct(struct_name);
   if (!struct_def) {
-    return true;  // 未定義型はresolveTypeReferencesで検出済み
+    return true;
   }
 
   visiting.insert(struct_name);
 
-  // 各フィールドをチェック
   for (const auto & field : struct_def->fields) {
-    if (field.type.kind == Type::Kind::Struct) {
-      if (!checkCircularReference(field.type.struct_name, source, visiting)) {
-        return false;
-      }
-    } else if (field.type.kind == Type::Kind::Array && field.type.element_type) {
-      if (field.type.element_type->kind == Type::Kind::Struct) {
-        if (!checkCircularReference(field.type.element_type->struct_name, source, visiting)) {
-          return false;
+    bool has_circular = std::visit(
+      [&](const auto & t) -> bool {
+        using T = std::decay_t<decltype(t)>;
+
+        if constexpr (std::is_same_v<T, StructType>) {
+          return !checkCircularReference(t.name, source, visiting);
+        } else if constexpr (std::is_same_v<T, ArrayType>) {
+          if (t.element_type && t.element_type->isStruct()) {
+            return !checkCircularReference(t.element_type->asStruct().name, source, visiting);
+          }
         }
-      }
+
+        return false;
+      },
+      field.type.value);
+
+    if (has_circular) {
+      return false;
     }
   }
 

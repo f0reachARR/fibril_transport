@@ -1,8 +1,5 @@
 #include <gtest/gtest.h>
 
-#include <fstream>
-#include <sstream>
-
 #include "parser/parser.hpp"
 
 class ParserTest : public ::testing::Test
@@ -13,16 +10,6 @@ protected:
   void TearDown() override { parser.reset(); }
 
   std::unique_ptr<fibril::Parser> parser;
-
-  // テスト用のFibrilファイルを作成
-  void createTestFile(const std::string & filename, const std::string & content)
-  {
-    std::ofstream file(filename);
-    file << content;
-    file.close();
-  }
-
-  void removeTestFile(const std::string & filename) { std::remove(filename.c_str()); }
 };
 
 TEST_F(ParserTest, BasicSyntaxAndPackage)
@@ -32,16 +19,11 @@ syntax = "fibril v2";
 package test.basic;
 )";
 
-  const std::string test_file = "/tmp/test_basic.fibril";
-  createTestFile(test_file, test_content);
-
-  auto ast = parser->parse(test_file);
+  auto ast = parser->parseFromString(test_content);
 
   EXPECT_EQ(ast.syntax.version, "fibril v2");
   EXPECT_EQ(ast.package.name, "test.basic");
   EXPECT_TRUE(parser->getErrors().empty());
-
-  removeTestFile(test_file);
 }
 
 TEST_F(ParserTest, SimpleStruct)
@@ -57,25 +39,20 @@ struct Vector3 {
 }
 )";
 
-  const std::string test_file = "/tmp/test_struct.fibril";
-  createTestFile(test_file, test_content);
-
-  auto ast = parser->parse(test_file);
+  auto ast = parser->parseFromString(test_content);
 
   ASSERT_EQ(ast.structs.size(), 1);
   EXPECT_EQ(ast.structs[0].name, "Vector3");
   ASSERT_EQ(ast.structs[0].fields.size(), 3);
 
   EXPECT_EQ(ast.structs[0].fields[0].name, "x");
-  EXPECT_EQ(ast.structs[0].fields[0].type.kind, fibril::Type::Kind::Primitive);
-  EXPECT_EQ(ast.structs[0].fields[0].type.primitive_type, fibril::PrimitiveType::Float);
+  EXPECT_TRUE(ast.structs[0].fields[0].type.isPrimitive());
+  EXPECT_EQ(ast.structs[0].fields[0].type.asPrimitive(), fibril::PrimitiveType::Float);
 
   EXPECT_EQ(ast.structs[0].fields[1].name, "y");
   EXPECT_EQ(ast.structs[0].fields[2].name, "z");
 
   EXPECT_TRUE(parser->getErrors().empty());
-
-  removeTestFile(test_file);
 }
 
 TEST_F(ParserTest, StructWithAttributes)
@@ -93,10 +70,7 @@ struct Twist2D {
 }
 )";
 
-  const std::string test_file = "/tmp/test_struct_attr.fibril";
-  createTestFile(test_file, test_content);
-
-  auto ast = parser->parse(test_file);
+  auto ast = parser->parseFromString(test_content);
 
   ASSERT_EQ(ast.structs.size(), 1);
   EXPECT_EQ(ast.structs[0].name, "Twist2D");
@@ -105,8 +79,7 @@ struct Twist2D {
   ASSERT_EQ(ast.structs[0].attributes.size(), 1);
   EXPECT_EQ(ast.structs[0].attributes[0].name, "ros_type");
   ASSERT_EQ(ast.structs[0].attributes[0].arguments.size(), 1);
-  EXPECT_EQ(
-    ast.structs[0].attributes[0].arguments[0].kind, fibril::AttributeValue::Kind::Identifier);
+  EXPECT_TRUE(std::holds_alternative<std::string>(ast.structs[0].attributes[0].arguments[0]));
   auto ros_type_arg = ast.structs[0].attributes[0].getStringArg(0);
   ASSERT_TRUE(ros_type_arg.has_value());
   EXPECT_EQ(ros_type_arg.value(), "geometry_msgs/msg/Twist");
@@ -118,8 +91,6 @@ struct Twist2D {
   EXPECT_EQ(ast.structs[0].fields[0].attributes[0].name, "ros_map");
 
   EXPECT_TRUE(parser->getErrors().empty());
-
-  removeTestFile(test_file);
 }
 
 TEST_F(ParserTest, NodeWithPubSub)
@@ -143,29 +114,33 @@ node TestNode {
 }
 )";
 
-  const std::string test_file = "/tmp/test_node.fibril";
-  createTestFile(test_file, test_content);
-
-  auto ast = parser->parse(test_file);
+  auto ast = parser->parseFromString(test_content);
 
   ASSERT_EQ(ast.nodes.size(), 1);
-  EXPECT_EQ(ast.nodes[0].name, "TestNode");
+  EXPECT_EQ(
+    ast
+
+      .nodes[0]
+      .name,
+    "TestNode");
 
   ASSERT_EQ(ast.nodes[0].ports.size(), 2);
 
   // Pub port
-  EXPECT_EQ(ast.nodes[0].ports[0].name, "pos");
-  EXPECT_EQ(ast.nodes[0].ports[0].direction, fibril::Port::Direction::Pub);
-  EXPECT_EQ(ast.nodes[0].ports[0].data_type.kind, fibril::Type::Kind::Struct);
-  EXPECT_EQ(ast.nodes[0].ports[0].data_type.struct_name, "Vector3");
+  ASSERT_TRUE(std::holds_alternative<fibril::PubPort>(ast.nodes[0].ports[0]));
+  const auto & pub = std::get<fibril::PubPort>(ast.nodes[0].ports[0]);
+  EXPECT_EQ(pub.name, "pos");
+  EXPECT_TRUE(pub.data_type.isStruct());
+  EXPECT_EQ(pub.data_type.asStruct().name, "Vector3");
 
   // Sub port
-  EXPECT_EQ(ast.nodes[0].ports[1].name, "vel");
-  EXPECT_EQ(ast.nodes[0].ports[1].direction, fibril::Port::Direction::Sub);
+  ASSERT_TRUE(std::holds_alternative<fibril::SubPort>(ast.nodes[0].ports[1]));
+  const auto & sub = std::get<fibril::SubPort>(ast.nodes[0].ports[1]);
+  EXPECT_EQ(sub.name, "vel");
+  EXPECT_TRUE(sub.data_type.isStruct());
+  EXPECT_EQ(sub.data_type.asStruct().name, "Vector3");
 
   EXPECT_TRUE(parser->getErrors().empty());
-
-  removeTestFile(test_file);
 }
 
 TEST_F(ParserTest, ArrayFields)
@@ -180,25 +155,20 @@ struct IMUData {
 }
 )";
 
-  const std::string test_file = "/tmp/test_array.fibril";
-  createTestFile(test_file, test_content);
-
-  auto ast = parser->parse(test_file);
+  auto ast = parser->parseFromString(test_content);
 
   ASSERT_EQ(ast.structs.size(), 1);
   ASSERT_EQ(ast.structs[0].fields.size(), 2);
 
   // 配列フィールド
   EXPECT_EQ(ast.structs[0].fields[0].name, "gyro");
-  EXPECT_EQ(ast.structs[0].fields[0].type.kind, fibril::Type::Kind::Array);
-  EXPECT_EQ(ast.structs[0].fields[0].type.array_size, 3);
-  EXPECT_EQ(ast.structs[0].fields[0].type.element_type->kind, fibril::Type::Kind::Primitive);
-  EXPECT_EQ(
-    ast.structs[0].fields[0].type.element_type->primitive_type, fibril::PrimitiveType::Float);
+  EXPECT_TRUE(ast.structs[0].fields[0].type.isArray());
+  const auto & array_type = ast.structs[0].fields[0].type.asArray();
+  EXPECT_EQ(array_type.size, 3);
+  EXPECT_TRUE(array_type.element_type->isPrimitive());
+  EXPECT_EQ(array_type.element_type->asPrimitive(), fibril::PrimitiveType::Float);
 
   EXPECT_TRUE(parser->getErrors().empty());
-
-  removeTestFile(test_file);
 }
 
 TEST_F(ParserTest, ServicePort)
@@ -221,29 +191,23 @@ node Device {
 }
 )";
 
-  const std::string test_file = "/tmp/test_service.fibril";
-  createTestFile(test_file, test_content);
-
-  auto ast = parser->parse(test_file);
+  auto ast = parser->parseFromString(test_content);
 
   ASSERT_EQ(ast.nodes.size(), 1);
   ASSERT_EQ(ast.nodes[0].ports.size(), 1);
 
-  auto & port = ast.nodes[0].ports[0];
-  EXPECT_EQ(port.name, "enable_motor");
-  EXPECT_EQ(port.direction, fibril::Port::Direction::Service);
+  // Service port
+  ASSERT_TRUE(std::holds_alternative<fibril::ServicePort>(ast.nodes[0].ports[0]));
+  const auto & svc = std::get<fibril::ServicePort>(ast.nodes[0].ports[0]);
+  EXPECT_EQ(svc.name, "enable_motor");
 
-  ASSERT_TRUE(port.request_type.has_value());
-  EXPECT_EQ(port.request_type->kind, fibril::Type::Kind::Struct);
-  EXPECT_EQ(port.request_type->struct_name, "Request");
+  EXPECT_TRUE(svc.request_type.isStruct());
+  EXPECT_EQ(svc.request_type.asStruct().name, "Request");
 
-  ASSERT_TRUE(port.response_type.has_value());
-  EXPECT_EQ(port.response_type->kind, fibril::Type::Kind::Struct);
-  EXPECT_EQ(port.response_type->struct_name, "Response");
+  EXPECT_TRUE(svc.response_type.isStruct());
+  EXPECT_EQ(svc.response_type.asStruct().name, "Response");
 
   EXPECT_TRUE(parser->getErrors().empty());
-
-  removeTestFile(test_file);
 }
 
 int main(int argc, char ** argv)

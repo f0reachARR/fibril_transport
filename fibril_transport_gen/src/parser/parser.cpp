@@ -25,7 +25,6 @@ SourceFile Parser::parse(const std::string & file_path)
 {
   errors_.clear();
 
-  // ファイルを読み込み
   std::ifstream file(file_path);
   if (!file.is_open()) {
     reportError("Failed to open file: " + file_path, 0, 0);
@@ -43,7 +42,6 @@ SourceFile Parser::parseFromString(const std::string & source, const std::string
 {
   errors_.clear();
 
-  // Tree-sitterでパース
   TSTree * tree = ts_parser_parse_string(parser_, nullptr, source.c_str(), source.length());
 
   if (!tree) {
@@ -65,7 +63,6 @@ SourceFile Parser::parseTree(
 
   TSNode root = ts_tree_root_node(tree);
 
-  // source_fileノードの子をイテレート
   uint32_t child_count = ts_node_child_count(root);
   for (uint32_t i = 0; i < child_count; ++i) {
     TSNode child = ts_node_child(root, i);
@@ -93,7 +90,6 @@ SyntaxDeclaration Parser::parseSyntaxDeclaration(TSNode node, const std::string 
   decl.line = ts_node_start_point(node).row + 1;
   decl.column = ts_node_start_point(node).column + 1;
 
-  // string_literalを探す
   uint32_t count = ts_node_child_count(node);
   for (uint32_t i = 0; i < count; ++i) {
     TSNode child = ts_node_child(node, i);
@@ -112,7 +108,6 @@ PackageDeclaration Parser::parsePackageDeclaration(TSNode node, const std::strin
   decl.line = ts_node_start_point(node).row + 1;
   decl.column = ts_node_start_point(node).column + 1;
 
-  // qualified_identifierを探す
   uint32_t count = ts_node_child_count(node);
   for (uint32_t i = 0; i < count; ++i) {
     TSNode child = ts_node_child(node, i);
@@ -131,7 +126,6 @@ ImportDeclaration Parser::parseImportDeclaration(TSNode node, const std::string 
   decl.line = ts_node_start_point(node).row + 1;
   decl.column = ts_node_start_point(node).column + 1;
 
-  // string_literalを探す
   uint32_t count = ts_node_child_count(node);
   for (uint32_t i = 0; i < count; ++i) {
     TSNode child = ts_node_child(node, i);
@@ -181,7 +175,6 @@ NodeDefinition Parser::parseNodeDefinition(TSNode node, const std::string & sour
     if (type == "identifier") {
       def.name = getNodeText(child, source);
     } else if (type == "port_declaration") {
-      // port_declarationの中身を取得
       TSNode port_child = ts_node_child(child, 0);
       def.ports.push_back(parsePort(port_child, source));
     }
@@ -211,8 +204,7 @@ FieldDeclaration Parser::parseFieldDeclaration(TSNode node, const std::string & 
     } else if (type == "identifier" && has_type) {
       field.name = getNodeText(child, source);
     } else if (type == "array_spec") {
-      // 配列サイズを取得してtypeを更新
-      TSNode size_node = ts_node_child(child, 1);  // '[' size ']'
+      TSNode size_node = ts_node_child(child, 1);
       std::string size_str = getNodeText(size_node, source);
       size_t size = std::stoul(size_str);
       field.type = Type::makeArray(std::move(field.type), size, field.line, field.column);
@@ -224,18 +216,15 @@ FieldDeclaration Parser::parseFieldDeclaration(TSNode node, const std::string & 
 
 Port Parser::parsePort(TSNode node, const std::string & source)
 {
-  Port port;
-  port.line = ts_node_start_point(node).row + 1;
-  port.column = ts_node_start_point(node).column + 1;
-
   std::string port_type = ts_node_type(node);
-  if (port_type == "pub_port") {
-    port.direction = Port::Direction::Pub;
-  } else if (port_type == "sub_port") {
-    port.direction = Port::Direction::Sub;
-  } else if (port_type == "service_port") {
-    port.direction = Port::Direction::Service;
-  }
+  size_t line = ts_node_start_point(node).row + 1;
+  size_t column = ts_node_start_point(node).column + 1;
+
+  std::vector<Attribute> attributes;
+  std::string name;
+  Type data_type = Type::makePrimitive(PrimitiveType::Int32, 0, 0);
+  Type request_type = Type::makePrimitive(PrimitiveType::Int32, 0, 0);
+  Type response_type = Type::makePrimitive(PrimitiveType::Int32, 0, 0);
 
   uint32_t count = ts_node_child_count(node);
   int type_count = 0;
@@ -245,44 +234,69 @@ Port Parser::parsePort(TSNode node, const std::string & source)
     std::string type = ts_node_type(child);
 
     if (type == "attribute") {
-      port.attributes.push_back(parseAttribute(child, source));
+      attributes.push_back(parseAttribute(child, source));
     } else if (type == "identifier") {
-      port.name = getNodeText(child, source);
+      name = getNodeText(child, source);
     } else if (type == "type_spec") {
-      if (port.direction == Port::Direction::Service) {
+      if (port_type == "service_port") {
         if (type_count == 0) {
-          port.request_type = parseType(child, source);
+          request_type = parseType(child, source);
         } else {
-          port.response_type = parseType(child, source);
+          response_type = parseType(child, source);
         }
         type_count++;
       } else {
-        port.data_type = parseType(child, source);
+        data_type = parseType(child, source);
       }
     }
   }
 
-  return port;
+  // Port variantを構築
+  if (port_type == "pub_port") {
+    PubPort pub;
+    pub.attributes = std::move(attributes);
+    pub.name = std::move(name);
+    pub.data_type = std::move(data_type);
+    pub.line = line;
+    pub.column = column;
+    return pub;
+  } else if (port_type == "sub_port") {
+    SubPort sub;
+    sub.attributes = std::move(attributes);
+    sub.name = std::move(name);
+    sub.data_type = std::move(data_type);
+    sub.line = line;
+    sub.column = column;
+    return sub;
+  } else {  // service_port
+    ServicePort svc;
+    svc.attributes = std::move(attributes);
+    svc.name = std::move(name);
+    svc.request_type = std::move(request_type);
+    svc.response_type = std::move(response_type);
+    svc.line = line;
+    svc.column = column;
+    return svc;
+  }
 }
 
 Type Parser::parseType(TSNode node, const std::string & source)
 {
-  Type type;
-  type.line = ts_node_start_point(node).row + 1;
-  type.column = ts_node_start_point(node).column + 1;
+  size_t line = ts_node_start_point(node).row + 1;
+  size_t column = ts_node_start_point(node).column + 1;
 
   TSNode child = ts_node_child(node, 0);
   std::string child_type = ts_node_type(child);
 
   if (child_type == "primitive_type") {
     std::string type_name = getNodeText(child, source);
-    type = Type::makePrimitive(parsePrimitiveType(type_name), type.line, type.column);
+    return Type::makePrimitive(parsePrimitiveType(type_name), line, column);
   } else if (child_type == "qualified_identifier") {
     std::string name = getNodeText(child, source);
-    type = Type::makeStruct(name, type.line, type.column);
+    return Type::makeStruct(name, line, column);
   }
 
-  return type;
+  return Type::makePrimitive(PrimitiveType::Int32, line, column);
 }
 
 Attribute Parser::parseAttribute(TSNode node, const std::string & source)
@@ -302,7 +316,6 @@ Attribute Parser::parseAttribute(TSNode node, const std::string & source)
       attr.name = getNodeText(child, source);
       found_name = true;
     } else if (type == "attribute_item") {
-      // attribute_itemの中身を解析
       TSNode item_id = ts_node_child(child, 0);
       if (ts_node_child_count(item_id) > 0 && std::string(ts_node_type(item_id)) == "identifier") {
         if (attr.name.empty()) {
@@ -310,36 +323,32 @@ Attribute Parser::parseAttribute(TSNode node, const std::string & source)
           found_name = true;
         }
       }
-      // 引数を探す
       uint32_t item_count = ts_node_child_count(child);
       for (uint32_t j = 0; j < item_count; ++j) {
         TSNode arg = ts_node_child(child, j);
         std::string arg_type = ts_node_type(arg);
         if (arg_type == "string_literal") {
-          attr.arguments.push_back(
-            AttributeValue::makeString(unquoteString(getNodeText(arg, source))));
+          attr.arguments.push_back(unquoteString(getNodeText(arg, source)));
         } else if (arg_type == "number_literal") {
           std::string num_str = getNodeText(arg, source);
-          attr.arguments.push_back(AttributeValue::makeNumber(std::stod(num_str)));
+          attr.arguments.push_back(std::stod(num_str));
         } else if (arg_type == "qualified_identifier") {
-          attr.arguments.push_back(AttributeValue::makeIdentifier(getNodeText(arg, source)));
+          attr.arguments.push_back(getNodeText(arg, source));
         }
       }
     } else if (type == "string_literal") {
-      attr.arguments.push_back(
-        AttributeValue::makeString(unquoteString(getNodeText(child, source))));
+      attr.arguments.push_back(unquoteString(getNodeText(child, source)));
     } else if (type == "number_literal") {
       std::string num_str = getNodeText(child, source);
-      attr.arguments.push_back(AttributeValue::makeNumber(std::stod(num_str)));
+      attr.arguments.push_back(std::stod(num_str));
     } else if (type == "qualified_identifier") {
-      attr.arguments.push_back(AttributeValue::makeIdentifier(getNodeText(child, source)));
+      attr.arguments.push_back(getNodeText(child, source));
     }
   }
 
   return attr;
 }
 
-// ヘルパー関数
 std::string Parser::getNodeText(TSNode node, const std::string & source)
 {
   uint32_t start = ts_node_start_byte(node);
@@ -369,7 +378,6 @@ PrimitiveType Parser::parsePrimitiveType(const std::string & type_name)
   if (type_name == "float") return PrimitiveType::Float;
   if (type_name == "double") return PrimitiveType::Double;
 
-  // デフォルト
   return PrimitiveType::Int32;
 }
 
