@@ -70,6 +70,24 @@ if(BUILD_TESTING)
     tree_sitter_fibril
     stdc++fs
   )
+  
+  ament_add_gtest(test_validator
+    test/test_validator.cpp
+    src/parser/parser.cpp
+    src/parser/ast.cpp
+    src/validator/validator.cpp
+  )
+  
+  target_include_directories(test_validator PRIVATE
+    ${TREE_SITTER_INCLUDE_DIRS}
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+  )
+  
+  target_link_libraries(test_validator
+    ${TREE_SITTER_LIBRARIES}
+    tree_sitter_fibril
+    stdc++fs
+  )
 endif()
 
 ament_package()
