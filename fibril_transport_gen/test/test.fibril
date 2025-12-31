@@ -1,0 +1,13 @@
+syntax = "fibril v2";
+package test;
+
+struct Vector3 {
+    float x;
+    float y;
+    float z;
+}
+
+node TestNode {
+    #[ros("/test")]
+    pub Vector3 position;
+}
