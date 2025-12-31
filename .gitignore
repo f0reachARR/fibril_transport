@@ -1,0 +1,41 @@
+# ROS 2 workspace artifacts
+build/
+install/
+log/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.pytest_cache/
+
+# C++
+*.o
+*.so
+*.a
+*.exe
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# CMake
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+
+# Generated code (will be regenerated)
+*_generated.hpp
+*_generated.cpp
+
+# Definition binaries (artifacts from codegen)
+*.bin
+
+# Test artifacts
+Testing/
+CTestTestfile.cmake

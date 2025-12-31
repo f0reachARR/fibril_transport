@@ -1,0 +1,12 @@
+{
+    "name": "tree-sitter-fibril",
+    "version": "0.1.0",
+    "description": "Tree-sitter grammar for Fibril IDL",
+    "main": "grammar.js",
+    "scripts": {
+        "test": "tree-sitter test"
+    },
+    "devDependencies": {
+        "tree-sitter-cli": "^0.20.8"
+    }
+}

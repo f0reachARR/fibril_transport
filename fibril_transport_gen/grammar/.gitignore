@@ -1,0 +1,14 @@
+# Tree-sitter生成ファイル
+src/
+node_modules/
+bindings/
+*.so
+*.dylib
+*.dll
+
+# pnpm
+pnpm-lock.yaml
+.pnpm-debug.log
+
+# Tree-sitterビルド成果物
+build/

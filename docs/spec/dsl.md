@@ -327,6 +327,7 @@ node MobileBase {
 **適用対象:** 構造体
 
 対応するROSメッセージ型を指定します。
+ここで指定するROSメッセージ型は、後に既存のROSメッセージの型定義を参照し、正しいかどうかをチェックされます。
 
 ```protobuf
 #[ros_type(geometry_msgs/msg/Twist)]

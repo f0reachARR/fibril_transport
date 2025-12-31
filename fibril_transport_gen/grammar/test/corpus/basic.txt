@@ -1,0 +1,164 @@
+==================
+Basic syntax
+================== 
+
+syntax = "fibril v2";
+package test;
+
+---
+
+(source_file
+  (syntax_declaration (string_literal))
+  (package_declaration (qualified_identifier)))
+
+==================
+Simple struct
+==================
+
+syntax = "fibril v2";
+package test;
+
+struct Vector3 {
+    float x;
+    float y;
+    float z;
+}
+
+---
+
+(source_file
+  (syntax_declaration (string_literal))
+  (package_declaration (qualified_identifier))
+  (struct_definition
+    (identifier)
+    (field_declaration (type_spec (primitive_type)) (identifier))
+    (field_declaration (type_spec (primitive_type)) (identifier))
+    (field_declaration (type_spec (primitive_type)) (identifier))))
+
+==================
+Struct with attributes
+==================
+
+syntax = "fibril v2";
+package sensors;
+
+#[ros_type(geometry_msgs/msg/Twist)]
+struct Twist2D {
+    #[ros_map(linear.x)]
+    #[unit("m/s")]
+    float v;
+    #[ros_map(angular.z)]
+    float w;
+}
+
+---
+
+(source_file
+  (syntax_declaration (string_literal))
+  (package_declaration (qualified_identifier))
+  (struct_definition
+    (attribute (identifier) (qualified_identifier))
+    (identifier)
+    (field_declaration
+      (attribute (identifier) (qualified_identifier))
+      (attribute (identifier) (string_literal))
+      (type_spec (primitive_type))
+      (identifier))
+    (field_declaration
+      (attribute (identifier) (qualified_identifier))
+      (type_spec (primitive_type))
+      (identifier))))
+
+==================
+Node with pub/sub
+==================
+
+syntax = "fibril v2";
+package robot;
+
+node MobileBase {
+    #[ros("/cmd_vel")]
+    sub Twist2D target_vel;
+    
+    #[ros("~/voltage")]
+    pub float battery_voltage;
+}
+
+---
+
+(source_file
+  (syntax_declaration (string_literal))
+  (package_declaration (qualified_identifier))
+  (node_definition
+    (identifier)
+    (port_declaration
+      (sub_port
+        (attribute (identifier) (string_literal))
+        (type_spec (qualified_identifier))
+        (identifier)))
+    (port_declaration
+      (pub_port
+        (attribute (identifier) (string_literal))
+        (type_spec (primitive_type))
+        (identifier)))))
+
+==================
+Service definition
+==================
+
+syntax = "fibril v2";
+package test;
+
+node Device {
+    #[ros_service(std_srvs/srv/SetBool)]
+    service enable_motor(EnableMotorRequest) -> EnableMotorResponse;
+    
+    #[ros_service(std_srvs/srv/Trigger)]
+    service reset() -> void;
+}
+
+---
+
+(source_file
+  (syntax_declaration (string_literal))
+  (package_declaration (qualified_identifier))
+  (node_definition
+    (identifier)
+    (port_declaration
+      (service_port
+        (attribute (identifier) (qualified_identifier))
+        (identifier)
+        (type_spec (qualified_identifier))
+        (type_spec (qualified_identifier))))
+    (port_declaration
+      (service_port
+        (attribute (identifier) (qualified_identifier))
+        (identifier)))))
+
+==================
+Array fields
+==================
+
+syntax = "fibril v2";
+package test;
+
+struct IMUData {
+    float gyro[3];
+    float accel[3];
+}
+
+---
+
+(source_file
+  (syntax_declaration (string_literal))
+  (package_declaration (qualified_identifier))
+  (struct_definition
+    (identifier)
+    (field_declaration
+      (type_spec (primitive_type))
+      (identifier)
+      (array_spec (number_literal)))
+    (field_declaration
+      (type_spec (primitive_type))
+      (identifier)
+      (array_spec (number_literal)))))
