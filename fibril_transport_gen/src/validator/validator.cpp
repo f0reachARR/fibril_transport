@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <sstream>
 
+#include "ros_validator.hpp"
+
 namespace fibril
 {
 
@@ -101,7 +103,9 @@ size_t TypeSizeCalculator::calculateStructSize(
 }
 
 // Validator
-Validator::Validator() {}
+Validator::Validator() : enable_ros_validation_(false) {}
+
+Validator::~Validator() = default;
 
 bool Validator::validate(const SourceFile & source)
 {
@@ -127,6 +131,13 @@ bool Validator::validate(const SourceFile & source)
     return false;
   }
 
+  // フェーズ5: ROS型検証（オプション）
+  if (enable_ros_validation_ && ros_validator_) {
+    if (!ros_validator_->validate(source, errors_)) {
+      return false;
+    }
+  }
+
   return !hasErrors();
 }
 
@@ -134,6 +145,26 @@ void Validator::collectTypeDefinitions(const SourceFile & source)
 {
   for (const auto & struct_def : source.structs) {
     defined_types_.insert(struct_def.name);
+  }
+}
+
+void Validator::setRosValidationEnabled(bool enabled)
+{
+  enable_ros_validation_ = enabled;
+
+  if (enabled && !ros_validator_) {
+    try {
+      ros_validator_ = std::make_unique<RosValidator>();
+    } catch (const std::exception & e) {
+      // ROS validation initialization failed, disable it
+      enable_ros_validation_ = false;
+      // Note: Error will be reported when validation is attempted
+      throw std::runtime_error(
+        "Failed to enable ROS validation: " + std::string(e.what()) +
+        "\nRun with --no-ros-validation to skip ROS type checking.");
+    }
+  } else if (!enabled) {
+    ros_validator_.reset();
   }
 }
 

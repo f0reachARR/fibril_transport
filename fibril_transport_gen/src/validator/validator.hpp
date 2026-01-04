@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "parser/ast.hpp"
+#include "ros_validator.hpp"
 
 namespace fibril
 {
@@ -43,9 +44,13 @@ class Validator
 {
 public:
   Validator();
+  ~Validator();  // Destructor needed for unique_ptr with forward-declared type
 
   // ソースファイル全体の検証
   bool validate(const SourceFile & source);
+
+  // ROS型検証の有効化/無効化
+  void setRosValidationEnabled(bool enabled);
 
   // エラー取得
   const std::vector<ValidationError> & getErrors() const { return errors_; }
@@ -57,6 +62,10 @@ private:
   std::vector<ValidationError> errors_;
   std::vector<ValidationError> warnings_;
   TypeSizeCalculator size_calc_;
+
+  // ROS型検証（オプション）
+  std::unique_ptr<RosValidator> ros_validator_;
+  bool enable_ros_validation_;
 
   // フェーズ1: 型定義の収集
   void collectTypeDefinitions(const SourceFile & source);

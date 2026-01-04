@@ -6,7 +6,7 @@ set(CMAKE_CXX_STANDARD 17)
 # ROS 2 dependencies
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
-# find_package(fibril_transport_common REQUIRED)  # TODO: 実装後に有効化
+find_package(fibril_transport_common REQUIRED)
 
 # Tree-sitter dependency (システムパッケージ)
 find_package(PkgConfig REQUIRED)
@@ -26,6 +26,7 @@ add_executable(fibril_transport_gen
   src/parser/parser.cpp
   src/parser/ast.cpp
   src/validator/validator.cpp
+  src/validator/ros_validator.cpp
   src/generator/cpp_generator.cpp
 )
 
@@ -36,7 +37,7 @@ target_include_directories(fibril_transport_gen PRIVATE
 
 ament_target_dependencies(fibril_transport_gen
   rclcpp
-  # fibril_transport_common  # TODO: 実装後に有効化
+  fibril_transport_common
 )
 
 target_link_libraries(fibril_transport_gen
@@ -74,6 +75,7 @@ if(BUILD_TESTING)
     src/parser/parser.cpp
     src/parser/ast.cpp
     src/validator/validator.cpp
+    src/validator/ros_validator.cpp
   )
   
   target_include_directories(test_validator PRIVATE
@@ -81,7 +83,36 @@ if(BUILD_TESTING)
     ${CMAKE_CURRENT_SOURCE_DIR}/src
   )
   
+  ament_target_dependencies(test_validator
+    rclcpp
+    fibril_transport_common
+  )
+  
   target_link_libraries(test_validator
+    ${TREE_SITTER_LIBRARIES}
+    tree_sitter_fibril
+    stdc++fs
+  )
+  
+  ament_add_gtest(test_ros_validator
+    test/test_ros_validator.cpp
+    src/parser/parser.cpp
+    src/parser/ast.cpp
+    src/validator/validator.cpp
+    src/validator/ros_validator.cpp
+  )
+  
+  target_include_directories(test_ros_validator PRIVATE
+    ${TREE_SITTER_INCLUDE_DIRS}
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+  )
+  
+  ament_target_dependencies(test_ros_validator
+    rclcpp
+    fibril_transport_common
+  )
+  
+  target_link_libraries(test_ros_validator
     ${TREE_SITTER_LIBRARIES}
     tree_sitter_fibril
     stdc++fs
