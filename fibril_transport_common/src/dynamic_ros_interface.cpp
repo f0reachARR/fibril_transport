@@ -2,6 +2,7 @@
 
 #include <ament_index_cpp/get_package_prefix.hpp>
 #include <ros_babel_fish/exceptions/babel_fish_exception.hpp>
+#include <ros_babel_fish/idl/type_support.hpp>
 #include <ros_babel_fish/messages/array_message.hpp>
 #include <ros_babel_fish/messages/compound_message.hpp>
 #include <ros_babel_fish/messages/value_message.hpp>
@@ -110,12 +111,32 @@ ros_babel_fish::ServiceTypeSupport::ConstSharedPtr DynamicRosInterface::getServi
   }
 }
 
+ros_babel_fish::MessageMembersIntrospection DynamicRosInterface::getMessageMembersIntrospection(
+  ros_babel_fish::MessageTypeSupport::ConstSharedPtr type_support) const
+{
+  return ros_babel_fish::MessageMembersIntrospection(*type_support);
+}
+
+ros_babel_fish::MessageMembersIntrospection
+DynamicRosInterface::getServiceRequestMembersIntrospection(
+  ros_babel_fish::ServiceTypeSupport::ConstSharedPtr type_support) const
+{
+  return type_support->request();
+}
+
+ros_babel_fish::MessageMembersIntrospection
+DynamicRosInterface::getServiceResponseMembersIntrospection(
+  ros_babel_fish::ServiceTypeSupport::ConstSharedPtr type_support) const
+{
+  return type_support->response();
+}
+
 bool DynamicRosInterface::validateFieldPath(
-  const std::string & type_name, const std::string & field_path) const
+  const ros_babel_fish::MessageMembersIntrospection members, const std::string & field_path) const
 {
   try {
     // Create a temporary message to validate the field path
-    auto msg = babel_fish_->create_message_shared(type_name);
+    auto msg = createMessage(members);
 
     if (field_path.empty()) {
       return true;  // Root level is always valid
@@ -130,9 +151,9 @@ bool DynamicRosInterface::validateFieldPath(
 }
 
 FieldTypeInfo DynamicRosInterface::getFieldTypeInfo(
-  const std::string & type_name, const std::string & field_path) const
+  const ros_babel_fish::MessageMembersIntrospection members, const std::string & field_path) const
 {
-  auto msg = babel_fish_->create_message_shared(type_name);
+  auto msg = createMessage(members);
 
   if (field_path.empty()) {
     throw std::runtime_error("Field path cannot be empty for getFieldTypeInfo");
@@ -152,9 +173,9 @@ FieldTypeInfo DynamicRosInterface::getFieldTypeInfo(
 }
 
 std::vector<FieldTypeInfo> DynamicRosInterface::getFieldList(
-  const std::string & type_name, const std::string & field_path) const
+  const ros_babel_fish::MessageMembersIntrospection members, const std::string & field_path) const
 {
-  auto msg = babel_fish_->create_message_shared(type_name);
+  auto msg = createMessage(members);
 
   const ros_babel_fish::CompoundMessage * target_msg = msg.get();
 
@@ -204,16 +225,11 @@ ros_babel_fish::CompoundMessage::SharedPtr DynamicRosInterface::createMessage(
 ros_babel_fish::CompoundMessage::SharedPtr DynamicRosInterface::createMessage(
   const ros_babel_fish::MessageTypeSupport::ConstSharedPtr & type_support) const
 {
-  try {
-    return ros_babel_fish::CompoundMessage::make_shared(*type_support);
-  } catch (const ros_babel_fish::BabelFishException & e) {
-    throw std::runtime_error(
-      "Failed to create message of type '" + type_support->name + "': " + e.what());
-  }
+  return createMessage(ros_babel_fish::MessageMembersIntrospection(*type_support));
 }
 
 ros_babel_fish::CompoundMessage::SharedPtr DynamicRosInterface::createMessage(
-  const ros_babel_fish::MessageMembersIntrospection & type_support) const
+  const ros_babel_fish::MessageMembersIntrospection type_support) const
 {
   try {
     return ros_babel_fish::CompoundMessage::make_shared(type_support);

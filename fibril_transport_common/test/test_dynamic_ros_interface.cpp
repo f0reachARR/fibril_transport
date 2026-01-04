@@ -54,37 +54,45 @@ TEST_F(DynamicRosInterfaceTest, GetServiceTypeSupportInvalidType)
 
 TEST_F(DynamicRosInterfaceTest, ValidateFieldPathValid)
 {
+  auto type_support = interface_->getMessageTypeSupport("geometry_msgs/msg/Twist");
+  auto members = interface_->getMessageMembersIntrospection(type_support);
   // Test valid field paths in geometry_msgs/msg/Twist
-  EXPECT_TRUE(interface_->validateFieldPath("geometry_msgs/msg/Twist", "linear"));
-  EXPECT_TRUE(interface_->validateFieldPath("geometry_msgs/msg/Twist", "angular"));
-  EXPECT_TRUE(interface_->validateFieldPath("geometry_msgs/msg/Twist", "linear.x"));
-  EXPECT_TRUE(interface_->validateFieldPath("geometry_msgs/msg/Twist", "linear.y"));
-  EXPECT_TRUE(interface_->validateFieldPath("geometry_msgs/msg/Twist", "linear.z"));
-  EXPECT_TRUE(interface_->validateFieldPath("geometry_msgs/msg/Twist", "angular.x"));
-  EXPECT_TRUE(interface_->validateFieldPath("geometry_msgs/msg/Twist", "angular.y"));
-  EXPECT_TRUE(interface_->validateFieldPath("geometry_msgs/msg/Twist", "angular.z"));
+  EXPECT_TRUE(interface_->validateFieldPath(members, "linear"));
+  EXPECT_TRUE(interface_->validateFieldPath(members, "angular"));
+  EXPECT_TRUE(interface_->validateFieldPath(members, "linear.x"));
+  EXPECT_TRUE(interface_->validateFieldPath(members, "linear.y"));
+  EXPECT_TRUE(interface_->validateFieldPath(members, "linear.z"));
+  EXPECT_TRUE(interface_->validateFieldPath(members, "angular.x"));
+  EXPECT_TRUE(interface_->validateFieldPath(members, "angular.y"));
+  EXPECT_TRUE(interface_->validateFieldPath(members, "angular.z"));
 }
 
 TEST_F(DynamicRosInterfaceTest, ValidateFieldPathInvalid)
 {
+  auto type_support = interface_->getMessageTypeSupport("geometry_msgs/msg/Twist");
+  auto members = interface_->getMessageMembersIntrospection(type_support);
   // Test invalid field paths
-  EXPECT_FALSE(interface_->validateFieldPath("geometry_msgs/msg/Twist", "nonexistent"));
-  EXPECT_FALSE(interface_->validateFieldPath("geometry_msgs/msg/Twist", "linear.w"));
-  EXPECT_FALSE(interface_->validateFieldPath("geometry_msgs/msg/Twist", "linear.x.y"));
+  EXPECT_FALSE(interface_->validateFieldPath(members, "nonexistent"));
+  EXPECT_FALSE(interface_->validateFieldPath(members, "linear.w"));
+  EXPECT_FALSE(interface_->validateFieldPath(members, "linear.x.y"));
 }
 
 TEST_F(DynamicRosInterfaceTest, ValidateFieldPathEmpty)
 {
+  auto type_support = interface_->getMessageTypeSupport("geometry_msgs/msg/Twist");
+  auto members = interface_->getMessageMembersIntrospection(type_support);
   // Empty path should be valid (points to root)
-  EXPECT_TRUE(interface_->validateFieldPath("geometry_msgs/msg/Twist", ""));
+  EXPECT_TRUE(interface_->validateFieldPath(members, ""));
 }
 
 // ========== Field Type Info Tests ==========
 
 TEST_F(DynamicRosInterfaceTest, GetFieldTypeInfoPrimitive)
 {
+  auto type_support = interface_->getMessageTypeSupport("geometry_msgs/msg/Twist");
+  auto members = interface_->getMessageMembersIntrospection(type_support);
   // Test getting type info for a primitive field
-  auto info = interface_->getFieldTypeInfo("geometry_msgs/msg/Twist", "linear.x");
+  auto info = interface_->getFieldTypeInfo(members, "linear.x");
 
   EXPECT_EQ(info.field_name, "x");
   EXPECT_TRUE(info.isPrimitive());
@@ -93,8 +101,10 @@ TEST_F(DynamicRosInterfaceTest, GetFieldTypeInfoPrimitive)
 
 TEST_F(DynamicRosInterfaceTest, GetFieldTypeInfoCompound)
 {
+  auto type_support = interface_->getMessageTypeSupport("geometry_msgs/msg/Twist");
+  auto members = interface_->getMessageMembersIntrospection(type_support);
   // Test getting type info for a compound field
-  auto info = interface_->getFieldTypeInfo("geometry_msgs/msg/Twist", "linear");
+  auto info = interface_->getFieldTypeInfo(members, "linear");
 
   EXPECT_EQ(info.field_name, "linear");
   EXPECT_TRUE(info.isCompound());
@@ -103,17 +113,20 @@ TEST_F(DynamicRosInterfaceTest, GetFieldTypeInfoCompound)
 
 TEST_F(DynamicRosInterfaceTest, GetFieldTypeInfoInvalidPath)
 {
+  auto type_support = interface_->getMessageTypeSupport("geometry_msgs/msg/Twist");
+  auto members = interface_->getMessageMembersIntrospection(type_support);
   // Test error handling for invalid field path
-  EXPECT_THROW(
-    interface_->getFieldTypeInfo("geometry_msgs/msg/Twist", "nonexistent"), std::runtime_error);
+  EXPECT_THROW(interface_->getFieldTypeInfo(members, "nonexistent"), std::runtime_error);
 }
 
 // ========== Field List Tests (LSP Support) ==========
 
 TEST_F(DynamicRosInterfaceTest, GetFieldListTopLevel)
 {
+  auto type_support = interface_->getMessageTypeSupport("geometry_msgs/msg/Twist");
+  auto members = interface_->getMessageMembersIntrospection(type_support);
   // Test getting top-level fields
-  auto fields = interface_->getFieldList("geometry_msgs/msg/Twist", "");
+  auto fields = interface_->getFieldList(members, "");
 
   ASSERT_EQ(fields.size(), 2);
 
@@ -139,8 +152,10 @@ TEST_F(DynamicRosInterfaceTest, GetFieldListTopLevel)
 
 TEST_F(DynamicRosInterfaceTest, GetFieldListNested)
 {
+  auto type_support = interface_->getMessageTypeSupport("geometry_msgs/msg/Twist");
+  auto members = interface_->getMessageMembersIntrospection(type_support);
   // Test getting nested fields (linear -> x, y, z)
-  auto fields = interface_->getFieldList("geometry_msgs/msg/Twist", "linear");
+  auto fields = interface_->getFieldList(members, "linear");
 
   ASSERT_EQ(fields.size(), 3);
 
@@ -166,8 +181,10 @@ TEST_F(DynamicRosInterfaceTest, GetFieldListNested)
 
 TEST_F(DynamicRosInterfaceTest, GetFieldListInvalidPath)
 {
+  auto type_support = interface_->getMessageTypeSupport("geometry_msgs/msg/Twist");
+  auto members = interface_->getMessageMembersIntrospection(type_support);
   // Test error for invalid path (pointing to primitive)
-  EXPECT_THROW(interface_->getFieldList("geometry_msgs/msg/Twist", "linear.x"), std::runtime_error);
+  EXPECT_THROW(interface_->getFieldList(members, "linear.x"), std::runtime_error);
 }
 
 // ========== Message Creation Tests ==========

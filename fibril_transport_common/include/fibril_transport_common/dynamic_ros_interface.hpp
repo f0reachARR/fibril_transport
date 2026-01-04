@@ -3,6 +3,7 @@
 #include <memory>
 #include <rclcpp/rclcpp.hpp>
 #include <ros_babel_fish/babel_fish.hpp>
+#include <ros_babel_fish/idl/type_support.hpp>
 #include <ros_babel_fish/messages/compound_message.hpp>
 #include <ros_babel_fish/messages/message.hpp>
 #include <string>
@@ -115,12 +116,41 @@ public:
     const std::string & type_name) const;
 
   /**
+   * @brief Get message members introspection
+   * @param type_name Message type (e.g., "geometry_msgs/msg/Twist")
+   * @return MessageMembersIntrospection if found
+   * @throws std::runtime_error if type not found
+   */
+  ros_babel_fish::MessageMembersIntrospection getMessageMembersIntrospection(
+    ros_babel_fish::MessageTypeSupport::ConstSharedPtr type_support) const;
+
+  /**
+   * @brief Get service members introspection
+   * @param type_name Service type (e.g., "std_srvs/srv/SetBool")
+   * @return ServiceMembersIntrospection if found
+   * @throws std::runtime_error if type not found
+   */
+  ros_babel_fish::MessageMembersIntrospection getServiceRequestMembersIntrospection(
+    ros_babel_fish::ServiceTypeSupport::ConstSharedPtr type_support) const;
+
+  /**
+   * @brief Get service members introspection
+   * @param type_name Service type (e.g., "std_srvs/srv/SetBool")
+   * @return ServiceMembersIntrospection if found
+   * @throws std::runtime_error if type not found
+   */
+  ros_babel_fish::MessageMembersIntrospection getServiceResponseMembersIntrospection(
+    ros_babel_fish::ServiceTypeSupport::ConstSharedPtr type_support) const;
+
+  /**
    * @brief Validate if a field path exists in a message type
    * @param type_name Message type name
    * @param field_path Dot-separated field path (e.g., "linear.x")
    * @return true if field path is valid, false otherwise
    */
-  bool validateFieldPath(const std::string & type_name, const std::string & field_path) const;
+  bool validateFieldPath(
+    const ros_babel_fish::MessageMembersIntrospection members,
+    const std::string & field_path) const;
 
   /**
    * @brief Get detailed type information for a specific field
@@ -130,7 +160,8 @@ public:
    * @throws std::runtime_error if field not found
    */
   FieldTypeInfo getFieldTypeInfo(
-    const std::string & type_name, const std::string & field_path) const;
+    const ros_babel_fish::MessageMembersIntrospection members,
+    const std::string & field_path) const;
 
   /**
    * @brief Get list of all fields at a specific hierarchy level (for LSP completion)
@@ -143,7 +174,8 @@ public:
    *   getFieldList("geometry_msgs/msg/Twist", "linear") -> [x, y, z]
    */
   std::vector<FieldTypeInfo> getFieldList(
-    const std::string & type_name, const std::string & field_path) const;
+    const ros_babel_fish::MessageMembersIntrospection members,
+    const std::string & field_path) const;
 
   // ========== Master side API ==========
 
@@ -165,13 +197,13 @@ public:
     const ros_babel_fish::MessageTypeSupport::ConstSharedPtr & type_support) const;
 
   /**
-   * @brief Create en empty message of the given MessageTypeSupport
-   * @param type_support Message type support
+   * @brief Create en empty message of the given MessageMembersIntrospection
+   * @param members Message members introspection
    * @return Shared pointer to the created message
    * @throws std::runtime_error if type not found
    */
   ros_babel_fish::CompoundMessage::SharedPtr createMessage(
-    const ros_babel_fish::MessageMembersIntrospection & type_support) const;
+    const ros_babel_fish::MessageMembersIntrospection members) const;
 
   /**
    * @brief Set field value in a message
