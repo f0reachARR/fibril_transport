@@ -10,7 +10,7 @@ find_package(ros_babel_fish REQUIRED)
 
 # Library
 add_library(${PROJECT_NAME} SHARED
-  src/ros_type_validator.cpp
+  src/definition_binary.cpp
 )
 
 target_include_directories(${PROJECT_NAME} PUBLIC
@@ -44,17 +44,12 @@ install(EXPORT ${PROJECT_NAME}Targets
 if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
   
-  ament_add_gtest(test_ros_type_validator
-    test/test_ros_type_validator.cpp
+  ament_add_gtest(test_definition_binary
+    test/test_definition_binary.cpp
   )
   
-  target_link_libraries(test_ros_type_validator
+  target_link_libraries(test_definition_binary
     ${PROJECT_NAME}
-  )
-  
-  ament_target_dependencies(test_ros_type_validator
-    rclcpp
-    ros_babel_fish
   )
 endif()
 
