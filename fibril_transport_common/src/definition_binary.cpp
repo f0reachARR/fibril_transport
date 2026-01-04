@@ -1,6 +1,6 @@
 #include "fibril_transport_common/definition_binary.hpp"
 
-namespace fibril
+namespace fibril_transport_common
 {
 
 // ============================================================================
@@ -239,4 +239,4 @@ std::vector<uint8_t> DefinitionBinaryReader::readBytes(size_t length)
   return result;
 }
 
-}  // namespace fibril
+}  // namespace fibril_transport_common

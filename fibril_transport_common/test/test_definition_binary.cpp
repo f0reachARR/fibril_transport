@@ -2,7 +2,7 @@
 
 #include "fibril_transport_common/definition_binary.hpp"
 
-using namespace fibril;
+using namespace fibril_transport_common;
 
 // ============================================================================
 // DefinitionBinaryBuilder Tests

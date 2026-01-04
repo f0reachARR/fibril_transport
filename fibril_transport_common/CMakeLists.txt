@@ -11,6 +11,7 @@ find_package(ros_babel_fish REQUIRED)
 # Library
 add_library(${PROJECT_NAME} SHARED
   src/definition_binary.cpp
+  src/dynamic_ros_interface.cpp
 )
 
 target_include_directories(${PROJECT_NAME} PUBLIC
@@ -49,6 +50,14 @@ if(BUILD_TESTING)
   )
   
   target_link_libraries(test_definition_binary
+    ${PROJECT_NAME}
+  )
+  
+  ament_add_gtest(test_dynamic_ros_interface
+    test/test_dynamic_ros_interface.cpp
+  )
+  
+  target_link_libraries(test_dynamic_ros_interface
     ${PROJECT_NAME}
   )
 endif()

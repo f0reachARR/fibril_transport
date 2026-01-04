@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-namespace fibril
+namespace fibril_transport_common
 {
 
 // Magic number "FBRL" (0x4642524C)
@@ -249,4 +249,4 @@ private:
   std::vector<uint8_t> readBytes(size_t length);
 };
 
-}  // namespace fibril
+}  // namespace fibril_transport_common
