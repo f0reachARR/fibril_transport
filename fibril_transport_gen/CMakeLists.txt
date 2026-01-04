@@ -26,9 +26,7 @@ add_executable(fibril_transport_gen
   src/parser/parser.cpp
   src/parser/ast.cpp
   src/validator/validator.cpp
-  src/generator/generator.cpp
   src/generator/cpp_generator.cpp
-  src/generator/bin_generator.cpp
 )
 
 target_include_directories(fibril_transport_gen PRIVATE

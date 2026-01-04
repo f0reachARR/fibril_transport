@@ -1,0 +1,25 @@
+syntax = "fibril v2";
+package example.motor;
+
+struct Vector3 {
+    float x;
+    float y;
+    float z;
+}
+
+struct MotorCommand {
+    float velocity;
+    float torque;
+}
+
+node MotorController {
+    // Subscribe to command
+    sub MotorCommand cmd;
+    
+    // Publish status
+    pub Vector3 position;
+    pub float current;
+    
+    // Service for calibration
+    service calibrate(bool enable) -> bool;
+}
