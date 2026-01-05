@@ -12,6 +12,9 @@ find_package(ros_babel_fish REQUIRED)
 add_library(${PROJECT_NAME} SHARED
   src/definition_binary.cpp
   src/dynamic_ros_interface.cpp
+  src/type_system.cpp
+  src/attribute_system.cpp
+  src/definition_descriptors.cpp
 )
 
 target_include_directories(${PROJECT_NAME} PUBLIC

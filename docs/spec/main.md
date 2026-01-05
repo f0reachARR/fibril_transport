@@ -401,8 +401,10 @@ Offset | Size | Field              | Description
 0x00   | 1    | Port Name Length   | Port名の長さ (M bytes)
 0x01   | M    | Port Name          | Port名文字列 (例: "target_vel")
 0x01+M | 1    | Direction          | 0=sub, 1=pub, 2=param
-0x02+M | 2    | Type Info Length   | 型情報部のサイズ (T bytes)
-0x04+M | T    | Type Info          | 型定義（構造体情報）
+0x02+M | 2    | Type Info Length   | 型情報部のサイズ (T bytes)、Serviceの場合Request型情報部のサイズ (T bytes)
+0x04+M | T    | Type Info          | 型定義（構造体情報）、Serviceの場合Request型情報
+0x04+M+T | 2  | Service Type Info Length | Service Response型情報部のサイズ (S bytes、0=非Service)
+0x06+M+T | S  | Service Type Info  | Service Response型情報（構造体情報）
 ...    | ...  | Metadata           | ros_map, unit, default値など
 ```
 
@@ -419,7 +421,7 @@ Offset | Size | Field              | Description
 0x02+S | 1    | Field Count        | フィールド数 (F個)
 ```
 
-各フィールド：
+構造体の各フィールド：
 
 ```text
 Offset | Size | Field              | Description
