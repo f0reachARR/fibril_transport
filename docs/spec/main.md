@@ -386,9 +386,11 @@ Offset | Size | Field              | Description
 0x04   | 2    | Version            | プロトコルバージョン (0x0200 = v2.0)
 0x06   | 1    | Node Name Length   | ノード名の長さ (N bytes)
 0x07   | N    | Node Name          | ノード名文字列 (例: "MobileBase")
-0x07+N | 1    | Port Count         | Portの数 (P個)
+0x07+N | 1    | Struct Count       | 構造体の数 (S個)
+0x08+N | 1    | Port Count         | Portの数 (P個)
+...    | ...  | Struct Entries     | 各構造体の定義（以下参照）
 ...    | ...  | Port Entries       | 各Portの定義（以下参照）
-...    | ...  | Metadata           | ノード全体のメタデータ（ros_map, descriptionなど）
+...    | ...  | Metadata           | ノード全体のメタデータ（descriptionなど）
 ```
 
 ### B.2. Port Entry (× Port Count)
@@ -396,49 +398,16 @@ Offset | Size | Field              | Description
 各Portについて以下の情報が続きます：
 
 ```text
-Offset | Size | Field              | Description
--------|------|--------------------|---------------------------------
-0x00   | 1    | Port Name Length   | Port名の長さ (M bytes)
-0x01   | M    | Port Name          | Port名文字列 (例: "target_vel")
-0x01+M | 1    | Direction          | 0=sub, 1=pub, 2=param
-0x02+M | 2    | Type Info Length   | 型情報部のサイズ (T bytes)、Serviceの場合Request型情報部のサイズ (T bytes)
-0x04+M | T    | Type Info          | 型定義（構造体情報）、Serviceの場合Request型情報
-0x04+M+T | 2  | Service Type Info Length | Service Response型情報部のサイズ (S bytes、0=非Service)
-0x06+M+T | S  | Service Type Info  | Service Response型情報（構造体情報）
-...    | ...  | Metadata           | ros_map, unit, default値など
-```
-
-### B.3. 型情報 (Type Info)
-
-構造体の場合：
-
-```text
-Offset | Size | Field              | Description
--------|------|--------------------|---------------------------------
-0x00   | 1    | Type Kind          | 0=primitive, 1=struct
-0x01   | 1    | Struct Name Length | 構造体名の長さ (S bytes)
-0x02   | S    | Struct Name        | 構造体名 (例: "Twist2D")
-0x02+S | 1    | Field Count        | フィールド数 (F個)
-```
-
-構造体の各フィールド：
-
-```text
-Offset | Size | Field              | Description
--------|------|--------------------|---------------------------------
-0x00   | 1    | Field Name Length  | フィールド名の長さ (L bytes)
-0x01   | L    | Field Name         | フィールド名 (例: "v")
-0x01+L | 1    | Primitive Type     | 型ID (0=float, 1=int32, 2=uint32, ...)
-0x02+L | 2    | Array Size         | 配列長 (0=非配列, >0=固定長配列)
-```
-
-プリミティブ型の場合：
-
-```text
-Offset | Size | Field              | Description
--------|------|--------------------|---------------------------------
-0x00   | 1    | Type Kind          | 0=primitive
-0x01   | 1    | Primitive Type     | 型ID (下表参照)
+Offset   | Size | Field              | Description
+---------|------|--------------------|---------------------------------
+0x00     | 1    | Port Name Length   | Port名の長さ (M bytes)
+0x01     | M    | Port Name          | Port名文字列 (例: "target_vel")
+0x01+M   | 1    | Direction          | 0=sub, 1=pub, 2=service
+0x02+M   | 1    | 1st Type Kind      | 0=primitive, 1=struct
+0x03+M   | 1    | 1st Type           | 1st TypeのID (Primitive Type IDs / Struct Index)
+0x04+M   | 1    | 2nd Type Kind      | 0=primitive, 1=struct (サービスのみ)
+0x05+M   | 1    | 2nd Type           | 2nd TypeのID (Primitive Type IDs / Struct Index) (サービスのみ)
+...      | ...  | Metadata           | ros_map, unit, default値など (at least 1 byte)
 ```
 
 **Primitive Type IDs:**
@@ -458,6 +427,33 @@ Offset | Size | Field              | Description
 | 0x0A | double | 8 |
 | 0x0B-0xFF | (Reserved) | - |
 
+### B.3. Struct Entry (× Struct Count)
+
+構造体の場合：
+
+```text
+Offset | Size | Field              | Description
+-------|------|--------------------|---------------------------------
+0x00   | 1    | Struct Name Length | 構造体名の長さ (S bytes)
+0x01   | S    | Struct Name        | 構造体名 (例: "Twist2D")
+0x01+S | 1    | Field Count        | フィールド数 (F個)
+...    | ...  | Field Entries      | 各フィールドの定義 (以下参照)
+...    | ...  | Metadata           | ros_map, unit, default値など (at least 1 byte)
+```
+
+構造体の各フィールド：
+
+```text
+Offset | Size | Field              | Description
+-------|------|--------------------|---------------------------------
+0x00   | 1    | Field Name Length  | フィールド名の長さ (L bytes)
+0x01   | L    | Field Name         | フィールド名 (例: "v")
+0x01+L | 1    | Type Kind          | 0=primitive, 1=struct
+0x02+L | 1    | Type               | 型ID (Primitive Type IDs / Struct Index)
+0x03+L | 1    | Array Size         | 配列長 (0=非配列, >0=固定長配列)
+...    | ...  | Metadata           | ros_map, unit, default値など (at least 1 byte)
+```
+
 ### B.4. メタデータ (Metadata)
 
 可変長のKey-Value形式：
@@ -476,7 +472,7 @@ Offset | Size | Field              | Description
 0x00   | 1    | Key Length         | キーの長さ
 0x01   | K    | Key                | キー文字列 (例: "ros_map", "unit")
 0x01+K | 2    | Value Length       | 値の長さ
-0x03+K | V    | Value              | 値（文字列または数値）
+0x03+K | V    | Value              | 値 (メタデータによって異なる形式)
 ```
 
 ### B.5. チェックサム計算
