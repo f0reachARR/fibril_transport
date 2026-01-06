@@ -448,7 +448,7 @@ Offset | Size | Field              | Description
 -------|------|--------------------|---------------------------------
 0x00   | 1    | Field Name Length  | フィールド名の長さ (L bytes)
 0x01   | L    | Field Name         | フィールド名 (例: "v")
-0x01+L | 1    | Type Kind          | 0=primitive, 1=struct
+0x01+L | 1    | Type Kind          | 0=primitive, 1=struct (in case of array, this is about inner element)
 0x02+L | 1    | Type               | 型ID (Primitive Type IDs / Struct Index)
 0x03+L | 1    | Array Size         | 配列長 (0=非配列, >0=固定長配列)
 ...    | ...  | Metadata           | ros_map, unit, default値など (at least 1 byte)
