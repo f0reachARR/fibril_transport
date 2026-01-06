@@ -19,64 +19,39 @@ std::string ValidationError::format() const
 // TypeSizeCalculator
 size_t TypeSizeCalculator::getPrimitiveSize(PrimitiveType type)
 {
-  switch (type) {
-    case PrimitiveType::Bool:
-    case PrimitiveType::Int8:
-    case PrimitiveType::UInt8:
-      return 1;
-    case PrimitiveType::Int16:
-    case PrimitiveType::UInt16:
-      return 2;
-    case PrimitiveType::Int32:
-    case PrimitiveType::UInt32:
-    case PrimitiveType::Float:
-      return 4;
-    case PrimitiveType::Int64:
-    case PrimitiveType::UInt64:
-    case PrimitiveType::Double:
-      return 8;
-    default:
-      return 0;
-  }
+  return fibril_transport_common::getPrimitiveTypeSize(type);
 }
 
-size_t TypeSizeCalculator::calculateSize(const Type & type, const SourceFile & source)
+size_t TypeSizeCalculator::calculateSize(const TypeDescriptor & type, const SourceFile & source)
 {
-  return std::visit(
-    [&](const auto & t) -> size_t {
-      using T = std::decay_t<decltype(t)>;
+  if (type.isPrimitive()) {
+    return getPrimitiveSize(type.asPrimitive());
+  } else if (type.isStruct()) {
+    const std::string & struct_name = type.asStructName();
 
-      if constexpr (std::is_same_v<T, PrimitiveType>) {
-        return getPrimitiveSize(t);
-      } else if constexpr (std::is_same_v<T, StructType>) {
-        // キャッシュチェック
-        auto it = size_cache_.find(t.name);
-        if (it != size_cache_.end()) {
-          return it->second;
-        }
+    // キャッシュチェック
+    auto it = size_cache_.find(struct_name);
+    if (it != size_cache_.end()) {
+      return it->second;
+    }
 
-        const StructDefinition * struct_def = source.findStruct(t.name);
-        if (!struct_def) {
-          return 0;
-        }
-
-        size_t size = calculateStructSize(*struct_def, source);
-        size_cache_[t.name] = size;
-        return size;
-      } else if constexpr (std::is_same_v<T, ArrayType>) {
-        if (t.element_type) {
-          return calculateSize(*t.element_type, source) * t.size;
-        }
-        return 0;
-      }
-
+    const AstStructDescriptor * struct_def = source.findStruct(struct_name);
+    if (!struct_def) {
       return 0;
-    },
-    type.value);
+    }
+
+    size_t size = calculateStructSize(*struct_def, source);
+    size_cache_[struct_name] = size;
+    return size;
+  } else if (type.isArray()) {
+    return calculateSize(type.arrayElement(), source) * type.arraySize();
+  }
+
+  return 0;
 }
 
 size_t TypeSizeCalculator::calculateStructSize(
-  const StructDefinition & struct_def, const SourceFile & source)
+  const StructDescriptor & struct_def, const SourceFile & source)
 {
   size_t total_size = 0;
   size_t max_alignment = 1;
@@ -158,7 +133,6 @@ void Validator::setRosValidationEnabled(bool enabled)
     } catch (const std::exception & e) {
       // ROS validation initialization failed, disable it
       enable_ros_validation_ = false;
-      // Note: Error will be reported when validation is attempted
       throw std::runtime_error(
         "Failed to enable ROS validation: " + std::string(e.what()) +
         "\nRun with --no-ros-validation to skip ROS type checking.");
@@ -170,7 +144,7 @@ void Validator::setRosValidationEnabled(bool enabled)
 
 bool Validator::checkDuplicateDefinitions(const SourceFile & source)
 {
-  std::map<std::string, const StructDefinition *> struct_map;
+  std::map<std::string, const AstNode<StructDescriptor> *> struct_map;
 
   for (const auto & struct_def : source.structs) {
     auto it = struct_map.find(struct_def.name);
@@ -211,7 +185,8 @@ bool Validator::resolveTypeReferences(const SourceFile & source)
       if (!resolveType(field.type, source)) {
         std::string type_name = getTypeName(field.type);
         reportError(
-          "Unknown type: '" + type_name + "'", field.line, field.column, source.file_path);
+          "Unknown type: '" + type_name + "'", struct_def.line, struct_def.column,
+          source.file_path);
         success = false;
       }
     }
@@ -228,23 +203,23 @@ bool Validator::resolveTypeReferences(const SourceFile & source)
             if (!resolveType(p.data_type, source)) {
               std::string type_name = getTypeName(p.data_type);
               reportError(
-                "Unknown type in port '" + p.name + "': '" + type_name + "'", p.line, p.column,
-                source.file_path);
+                "Unknown type in port '" + p.name + "': '" + type_name + "'", port.line,
+                port.column, source.file_path);
               return false;
             }
           } else if constexpr (std::is_same_v<T, ServicePort>) {
             if (!resolveType(p.request_type, source)) {
               std::string type_name = getTypeName(p.request_type);
               reportError(
-                "Unknown request type in service '" + p.name + "': '" + type_name + "'", p.line,
-                p.column, source.file_path);
+                "Unknown request type in service '" + p.name + "': '" + type_name + "'", port.line,
+                port.column, source.file_path);
               return false;
             }
             if (!resolveType(p.response_type, source)) {
               std::string type_name = getTypeName(p.response_type);
               reportError(
-                "Unknown response type in service '" + p.name + "': '" + type_name + "'", p.line,
-                p.column, source.file_path);
+                "Unknown response type in service '" + p.name + "': '" + type_name + "'", port.line,
+                port.column, source.file_path);
               return false;
             }
           }
@@ -258,45 +233,30 @@ bool Validator::resolveTypeReferences(const SourceFile & source)
   return success;
 }
 
-bool Validator::resolveType(const Type & type, const SourceFile & source)
+bool Validator::resolveType(const TypeDescriptor & type, const SourceFile & source)
 {
-  return std::visit(
-    [&](const auto & t) -> bool {
-      using T = std::decay_t<decltype(t)>;
+  if (type.isPrimitive()) {
+    return true;
+  } else if (type.isStruct()) {
+    return defined_types_.find(type.asStructName()) != defined_types_.end();
+  } else if (type.isArray()) {
+    return resolveType(type.arrayElement(), source);
+  }
 
-      if constexpr (std::is_same_v<T, PrimitiveType>) {
-        return true;
-      } else if constexpr (std::is_same_v<T, StructType>) {
-        return defined_types_.find(t.name) != defined_types_.end();
-      } else if constexpr (std::is_same_v<T, ArrayType>) {
-        if (t.element_type) {
-          return resolveType(*t.element_type, source);
-        }
-        return false;
-      }
-
-      return false;
-    },
-    type.value);
+  return false;
 }
 
-std::string Validator::getTypeName(const Type & type)
+std::string Validator::getTypeName(const TypeDescriptor & type)
 {
-  return std::visit(
-    [](const auto & t) -> std::string {
-      using T = std::decay_t<decltype(t)>;
+  if (type.isPrimitive()) {
+    return "<primitive>";
+  } else if (type.isStruct()) {
+    return type.asStructName();
+  } else if (type.isArray()) {
+    return "<array>";
+  }
 
-      if constexpr (std::is_same_v<T, PrimitiveType>) {
-        return "<primitive>";
-      } else if constexpr (std::is_same_v<T, StructType>) {
-        return t.name;
-      } else if constexpr (std::is_same_v<T, ArrayType>) {
-        return "<array>";
-      }
-
-      return "<unknown>";
-    },
-    type.value);
+  return "<unknown>";
 }
 
 bool Validator::checkSemantics(const SourceFile & source)
@@ -331,7 +291,8 @@ bool Validator::checkSemantics(const SourceFile & source)
   return success;
 }
 
-bool Validator::validateStruct(const StructDefinition & struct_def, const SourceFile & source)
+bool Validator::validateStruct(
+  const AstNode<StructDescriptor> & struct_def, const SourceFile & source)
 {
   if (struct_def.fields.empty()) {
     reportWarning(
@@ -345,7 +306,7 @@ bool Validator::validateStruct(const StructDefinition & struct_def, const Source
     if (field_names.find(field.name) != field_names.end()) {
       reportError(
         "Duplicate field name: '" + field.name + "' in struct '" + struct_def.name + "'",
-        field.line, field.column, source.file_path);
+        struct_def.line, struct_def.column, source.file_path);
       return false;
     }
     field_names.insert(field.name);
@@ -367,12 +328,9 @@ bool Validator::validateNode(const NodeDefinition & node_def, const SourceFile &
     std::string port_name = std::visit([](const auto & p) { return p.name; }, port);
 
     if (port_names.find(port_name) != port_names.end()) {
-      auto [line, column] =
-        std::visit([](const auto & p) { return std::make_pair(p.line, p.column); }, port);
-
       reportError(
-        "Duplicate port name: '" + port_name + "' in node '" + node_def.name + "'", line, column,
-        source.file_path);
+        "Duplicate port name: '" + port_name + "' in node '" + node_def.name + "'", port.line,
+        port.column, source.file_path);
       return false;
     }
     port_names.insert(port_name);
@@ -388,7 +346,7 @@ bool Validator::checkCircularReference(
     return false;
   }
 
-  const StructDefinition * struct_def = source.findStruct(struct_name);
+  const AstNode<StructDescriptor> * struct_def = source.findStruct(struct_name);
   if (!struct_def) {
     return true;
   }
@@ -396,24 +354,17 @@ bool Validator::checkCircularReference(
   visiting.insert(struct_name);
 
   for (const auto & field : struct_def->fields) {
-    bool has_circular = std::visit(
-      [&](const auto & t) -> bool {
-        using T = std::decay_t<decltype(t)>;
-
-        if constexpr (std::is_same_v<T, StructType>) {
-          return !checkCircularReference(t.name, source, visiting);
-        } else if constexpr (std::is_same_v<T, ArrayType>) {
-          if (t.element_type && t.element_type->isStruct()) {
-            return !checkCircularReference(t.element_type->asStruct().name, source, visiting);
-          }
-        }
-
+    if (field.type.isStruct()) {
+      if (!checkCircularReference(field.type.asStructName(), source, visiting)) {
         return false;
-      },
-      field.type.value);
-
-    if (has_circular) {
-      return false;
+      }
+    } else if (field.type.isArray()) {
+      const TypeDescriptor & elem_type = field.type.arrayElement();
+      if (elem_type.isStruct()) {
+        if (!checkCircularReference(elem_type.asStructName(), source, visiting)) {
+          return false;
+        }
+      }
     }
   }
 

@@ -1,5 +1,10 @@
 #include <gtest/gtest.h>
 
+#include <fibril_transport_common/attribute_system.hpp>
+#include <fibril_transport_common/ros_attribute.hpp>
+
+using namespace fibril_transport_common;
+
 #include "parser/parser.hpp"
 
 class ParserTest : public ::testing::Test
@@ -77,18 +82,18 @@ struct Twist2D {
 
   // Struct属性
   ASSERT_EQ(ast.structs[0].attributes.size(), 1);
-  EXPECT_EQ(ast.structs[0].attributes[0].name, "ros_type");
-  ASSERT_EQ(ast.structs[0].attributes[0].arguments.size(), 1);
-  EXPECT_TRUE(std::holds_alternative<std::string>(ast.structs[0].attributes[0].arguments[0]));
-  auto ros_type_arg = ast.structs[0].attributes[0].getStringArg(0);
-  ASSERT_TRUE(ros_type_arg.has_value());
-  EXPECT_EQ(ros_type_arg.value(), "geometry_msgs/msg/Twist");
+  auto ros_type_attr = ast.structs[0].attributes.find<fibril_transport_common::RosTypeAttribute>();
+  ASSERT_NE(ros_type_attr, nullptr);
+  EXPECT_EQ(ros_type_attr->ros_message_type, "geometry_msgs/msg/Twist");
 
   // フィールド属性
   ASSERT_EQ(ast.structs[0].fields.size(), 2);
   EXPECT_EQ(ast.structs[0].fields[0].name, "v");
   ASSERT_EQ(ast.structs[0].fields[0].attributes.size(), 1);
-  EXPECT_EQ(ast.structs[0].fields[0].attributes[0].name, "ros_map");
+  auto ros_map_attr =
+    ast.structs[0].fields[0].attributes.find<fibril_transport_common::RosMapAttribute>();
+  ASSERT_NE(ros_map_attr, nullptr);
+  EXPECT_EQ(ros_map_attr->field_path, "linear.x");
 
   EXPECT_TRUE(parser->getErrors().empty());
 }
@@ -131,14 +136,14 @@ node TestNode {
   const auto & pub = std::get<fibril::PubPort>(ast.nodes[0].ports[0]);
   EXPECT_EQ(pub.name, "pos");
   EXPECT_TRUE(pub.data_type.isStruct());
-  EXPECT_EQ(pub.data_type.asStruct().name, "Vector3");
+  EXPECT_EQ(pub.data_type.asStructName(), "Vector3");
 
   // Sub port
   ASSERT_TRUE(std::holds_alternative<fibril::SubPort>(ast.nodes[0].ports[1]));
   const auto & sub = std::get<fibril::SubPort>(ast.nodes[0].ports[1]);
   EXPECT_EQ(sub.name, "vel");
   EXPECT_TRUE(sub.data_type.isStruct());
-  EXPECT_EQ(sub.data_type.asStruct().name, "Vector3");
+  EXPECT_EQ(sub.data_type.asStructName(), "Vector3");
 
   EXPECT_TRUE(parser->getErrors().empty());
 }
@@ -163,10 +168,10 @@ struct IMUData {
   // 配列フィールド
   EXPECT_EQ(ast.structs[0].fields[0].name, "gyro");
   EXPECT_TRUE(ast.structs[0].fields[0].type.isArray());
-  const auto & array_type = ast.structs[0].fields[0].type.asArray();
-  EXPECT_EQ(array_type.size, 3);
-  EXPECT_TRUE(array_type.element_type->isPrimitive());
-  EXPECT_EQ(array_type.element_type->asPrimitive(), fibril::PrimitiveType::Float);
+  EXPECT_EQ(ast.structs[0].fields[0].type.arraySize(), 3);
+  EXPECT_TRUE(ast.structs[0].fields[0].type.arrayElement().isPrimitive());
+  EXPECT_EQ(
+    ast.structs[0].fields[0].type.arrayElement().asPrimitive(), fibril::PrimitiveType::Float);
 
   EXPECT_TRUE(parser->getErrors().empty());
 }
@@ -186,7 +191,7 @@ struct Response {
 }
 
 node Device {
-    #[ros_service(std_srvs/srv/SetBool)]
+    #[ros(std_srvs/srv/SetBool)]
     service enable_motor(Request) -> Response;
 }
 )";
@@ -202,10 +207,10 @@ node Device {
   EXPECT_EQ(svc.name, "enable_motor");
 
   EXPECT_TRUE(svc.request_type.isStruct());
-  EXPECT_EQ(svc.request_type.asStruct().name, "Request");
+  EXPECT_EQ(svc.request_type.asStructName(), "Request");
 
   EXPECT_TRUE(svc.response_type.isStruct());
-  EXPECT_EQ(svc.response_type.asStruct().name, "Response");
+  EXPECT_EQ(svc.response_type.asStructName(), "Response");
 
   EXPECT_TRUE(parser->getErrors().empty());
 }

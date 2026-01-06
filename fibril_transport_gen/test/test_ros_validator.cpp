@@ -121,6 +121,39 @@ struct BadMapping {
   EXPECT_NE(validator->getErrors()[0].message.find("Invalid field path"), std::string::npos);
 }
 
+// ========== ROS Pub/Sub Validation Tests ==========
+
+TEST_F(RosValidatorTest, ValidRosPubSubType)
+{
+  const std::string source = R"(
+syntax = "fibril v2";
+package test;
+
+#[ros_type(geometry_msgs/msg/Twist)]
+struct Twist2D {
+    #[ros_map(linear.x)]
+    float v;
+    
+    #[ros_map(angular.z)]
+    float w;
+}
+
+node TestNode {
+    #[ros("~/twist_pub")]
+    pub twist_pub(Twist2D);
+    #[ros("~/twist_sub")]
+    sub twist_sub(Twist2D);
+}
+)";
+
+  auto ast = parser->parseFromString(source);
+  ASSERT_TRUE(parser->getErrors().empty());
+
+  bool valid = validator->validate(ast);
+  EXPECT_TRUE(valid) << "Valid ROS pub/sub type should pass validation";
+  EXPECT_TRUE(validator->getErrors().empty());
+}
+
 // ========== ROS Service Validation Tests ==========
 
 TEST_F(RosValidatorTest, ValidRosServiceType)
@@ -140,6 +173,7 @@ struct SetBoolResponse {
 }
 
 node TestNode {
+    #[ros("~/enable_motor")]
     #[ros_service(std_srvs/srv/SetBool)]
     service enable_motor(SetBoolRequest) -> SetBoolResponse;
 }
@@ -212,6 +246,7 @@ struct SetBoolResponse {
 }
 
 node TestNode {
+    #[ros("~/enable_motor")]
     #[ros_service(std_srvs/srv/SetBool)]
     service enable_motor(SetBoolRequest) -> SetBoolResponse;
 }
@@ -242,6 +277,7 @@ struct SetBoolResponse {
 }
 
 node TestNode {
+    #[ros("~/bad_mapping")]
     #[ros_service(std_srvs/srv/SetBool)]
     service bad_mapping(InvalidSetBoolRequest) -> SetBoolResponse;
 }
@@ -253,7 +289,7 @@ node TestNode {
   bool valid = validator->validate(ast);
   EXPECT_FALSE(valid) << "Invalid service request field mapping should fail validation";
   ASSERT_FALSE(validator->getErrors().empty());
-  EXPECT_NE(validator->getErrors()[0].message.find("Invalid field path"), std::string::npos);
+  EXPECT_NE(validator->getErrors()[0].message.find("in service request type"), std::string::npos);
 }
 
 TEST_F(RosValidatorTest, InvalidServiceResponseFieldMapping)
@@ -273,6 +309,7 @@ struct InvalidSetBoolResponse {
 }
 
 node TestNode {
+    #[ros("~/bad_mapping")]
     #[ros_service(std_srvs/srv/SetBool)]
     service bad_mapping(SetBoolRequest) -> InvalidSetBoolResponse;
 }
@@ -284,7 +321,7 @@ node TestNode {
   bool valid = validator->validate(ast);
   EXPECT_FALSE(valid) << "Invalid service response field mapping should fail validation";
   ASSERT_FALSE(validator->getErrors().empty());
-  EXPECT_NE(validator->getErrors()[0].message.find("Invalid field path"), std::string::npos);
+  EXPECT_NE(validator->getErrors()[0].message.find("in service response type"), std::string::npos);
 }
 
 TEST_F(RosValidatorTest, ServiceFieldWithoutRosMap)
@@ -303,6 +340,7 @@ struct SetBoolResponse {
 }
 
 node TestNode {
+    #[ros("~/test_service")]
     #[ros_service(std_srvs/srv/SetBool)]
     service test_service(SetBoolRequest) -> SetBoolResponse;
 }
@@ -314,7 +352,7 @@ node TestNode {
   bool valid = validator->validate(ast);
   EXPECT_FALSE(valid) << "Service field without ros_map and wrong name should fail validation";
   ASSERT_FALSE(validator->getErrors().empty());
-  EXPECT_NE(validator->getErrors()[0].message.find("does not exist"), std::string::npos);
+  EXPECT_NE(validator->getErrors()[0].message.find("Field 'wrong_field_name'"), std::string::npos);
 }
 
 // ========== ROS Validation Enable/Disable Tests ==========
@@ -370,9 +408,11 @@ struct SetBoolResponse {
 }
 
 node TestNode {
+    #[ros("~/enable_motor")]
     #[ros_service(std_srvs/srv/SetBool)]
     service enable_motor(SetBoolRequest) -> SetBoolResponse;
     
+    #[ros("~/velocity")]
     pub Twist2D velocity;
 }
 )";
@@ -411,6 +451,7 @@ struct BadResponse {
 }
 
 node TestNode {
+    #[ros("~/bad_service")]
     #[ros_service(std_srvs/srv/SetBool)]
     service bad_service(BadRequest) -> BadResponse;
 }

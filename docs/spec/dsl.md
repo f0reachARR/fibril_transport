@@ -253,9 +253,11 @@ struct EnableMotorResponse {
 
 node MobileBase {
     #[ros_service(std_srvs/srv/SetBool)]
+    #[ros("~/enable_motor")]
     service enable_motor(EnableMotorRequest) -> EnableMotorResponse;
 
     #[ros_service(std_srvs/srv/Trigger)]
+    #[ros("~/reset_odometry")]
     service reset_odometry() -> void;
 }
 ```

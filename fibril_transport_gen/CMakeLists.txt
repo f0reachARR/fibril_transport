@@ -69,6 +69,11 @@ if(BUILD_TESTING)
     tree_sitter_fibril
     stdc++fs
   )
+
+  ament_target_dependencies(test_parser
+    rclcpp
+    fibril_transport_common
+  )
   
   ament_add_gtest(test_validator
     test/test_validator.cpp

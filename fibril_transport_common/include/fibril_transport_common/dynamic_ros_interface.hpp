@@ -9,7 +9,7 @@
 #include <string>
 #include <vector>
 
-#include "definition_binary.hpp"
+#include "definition_descriptors.hpp"
 
 namespace fibril_transport_common
 {
@@ -18,7 +18,7 @@ struct ArrayFieldTypeInfo;
 struct CompoundFieldTypeInfo;
 
 using FieldType = std::variant<
-  PrimitiveTypeId, std::shared_ptr<ArrayFieldTypeInfo>, std::shared_ptr<CompoundFieldTypeInfo>>;
+  PrimitiveType, std::shared_ptr<ArrayFieldTypeInfo>, std::shared_ptr<CompoundFieldTypeInfo>>;
 
 FieldType messageToFieldType(const ros_babel_fish::Message & message);
 
@@ -54,7 +54,7 @@ struct FieldTypeInfo
 
   FieldType type_info;
 
-  bool isPrimitive() const { return std::holds_alternative<PrimitiveTypeId>(type_info); }
+  bool isPrimitive() const { return std::holds_alternative<PrimitiveType>(type_info); }
 
   bool isArray() const
   {
@@ -66,13 +66,13 @@ struct FieldTypeInfo
     return std::holds_alternative<std::shared_ptr<CompoundFieldTypeInfo>>(type_info);
   }
 
-  auto & asPrimitive() { return std::get<PrimitiveTypeId>(type_info); }
+  auto & asPrimitive() { return std::get<PrimitiveType>(type_info); }
 
   auto & asArray() { return std::get<std::shared_ptr<ArrayFieldTypeInfo>>(type_info); }
 
   auto & asCompound() { return std::get<std::shared_ptr<CompoundFieldTypeInfo>>(type_info); }
 
-  const auto & asPrimitive() const { return std::get<PrimitiveTypeId>(type_info); }
+  const auto & asPrimitive() const { return std::get<PrimitiveType>(type_info); }
 
   const auto & asArray() const { return std::get<std::shared_ptr<ArrayFieldTypeInfo>>(type_info); }
 

@@ -51,14 +51,14 @@ private:
   std::string generateNodeClass(const NodeDefinition & node, const SourceFile & source);
 
   // ヘルパーメソッド
-  std::string toCppType(const Type & type);
+  std::string toCppType(const TypeDescriptor & type);
   std::string toSnakeCase(const std::string & str);
   std::string toUpperSnakeCase(const std::string & str);
   std::string toPascalCase(const std::string & str);
 
   // リソース計算
   size_t calculateMaxMappings(
-    const std::vector<Port> & ports, bool is_rx, const SourceFile & source);
+    const std::vector<AstPort> & ports, bool is_rx, const SourceFile & source);
   size_t calculateDataSize(const NodeDefinition & node, const SourceFile & source);
 
   // ポート種別判定
@@ -68,7 +68,7 @@ private:
 
   // ポート情報取得
   std::string getPortName(const Port & port);
-  const Type & getPortDataType(const Port & port);
+  const TypeDescriptor & getPortDataType(const Port & port);
 };
 
 }  // namespace fibril

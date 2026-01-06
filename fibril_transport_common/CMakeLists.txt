@@ -10,10 +10,10 @@ find_package(ros_babel_fish REQUIRED)
 
 # Library
 add_library(${PROJECT_NAME} SHARED
-  src/definition_binary.cpp
   src/dynamic_ros_interface.cpp
   src/type_system.cpp
   src/attribute_system.cpp
+  src/ros_attribute.cpp
   src/definition_descriptors.cpp
 )
 
@@ -47,14 +47,6 @@ install(EXPORT ${PROJECT_NAME}Targets
 # Testing
 if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
-  
-  ament_add_gtest(test_definition_binary
-    test/test_definition_binary.cpp
-  )
-  
-  target_link_libraries(test_definition_binary
-    ${PROJECT_NAME}
-  )
   
   ament_add_gtest(test_dynamic_ros_interface
     test/test_dynamic_ros_interface.cpp

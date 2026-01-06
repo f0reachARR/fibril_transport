@@ -1,16 +1,11 @@
 #pragma once
 
+#include <fibril_transport_common/dynamic_ros_interface.hpp>
 #include <memory>
 #include <string>
 #include <vector>
 
 #include "parser/ast.hpp"
-
-// Forward declaration to avoid circular dependency
-namespace fibril_transport_common
-{
-class DynamicRosInterface;
-}
 
 namespace fibril
 {
@@ -45,16 +40,21 @@ private:
 
   // Struct validation
   bool validateRosTypeAttribute(
-    const StructDefinition & struct_def, const SourceFile & source,
+    const AstStructDescriptor & struct_def, const SourceFile & source,
     std::vector<ValidationError> & errors);
 
   bool validateRosMapAttributes(
-    const StructDefinition & struct_def, const SourceFile & source,
+    const AstStructDescriptor & struct_def, const SourceFile & source,
     std::vector<ValidationError> & errors);
 
   // Node validation
   bool validateNode(
     const NodeDefinition & node_def, const SourceFile & source,
+    std::vector<ValidationError> & errors);
+
+  // Pub/Sub validation
+  bool validateRosPubSubTypeAttribute(
+    const TypeDescriptor & type_descriptor, const SourceFile & source,
     std::vector<ValidationError> & errors);
 
   // Service validation
@@ -70,10 +70,6 @@ private:
   void reportError(
     const std::string & message, size_t line, size_t column, const std::string & file,
     std::vector<ValidationError> & errors);
-
-  // Helper to get attribute value
-  std::optional<std::string> getAttributeValue(
-    const std::vector<Attribute> & attributes, const std::string & attr_name) const;
 };
 
 }  // namespace fibril

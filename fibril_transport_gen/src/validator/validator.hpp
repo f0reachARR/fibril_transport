@@ -30,10 +30,10 @@ public:
   static size_t getPrimitiveSize(PrimitiveType type);
 
   // 型のサイズ計算（再帰的）
-  size_t calculateSize(const Type & type, const SourceFile & source);
+  size_t calculateSize(const TypeDescriptor & type, const SourceFile & source);
 
   // 構造体のサイズ計算（アライメント考慮）
-  size_t calculateStructSize(const StructDefinition & struct_def, const SourceFile & source);
+  size_t calculateStructSize(const StructDescriptor & struct_def, const SourceFile & source);
 
 private:
   std::map<std::string, size_t> size_cache_;
@@ -77,13 +77,13 @@ private:
   bool checkSemantics(const SourceFile & source);
 
   // 型解決
-  bool resolveType(const Type & type, const SourceFile & source);
+  bool resolveType(const TypeDescriptor & type, const SourceFile & source);
 
   // 型名取得ヘルパー
-  std::string getTypeName(const Type & type);
+  std::string getTypeName(const TypeDescriptor & type);
 
   // 構造体の検証
-  bool validateStruct(const StructDefinition & struct_def, const SourceFile & source);
+  bool validateStruct(const AstStructDescriptor & struct_def, const SourceFile & source);
 
   // ノードの検証
   bool validateNode(const NodeDefinition & node_def, const SourceFile & source);

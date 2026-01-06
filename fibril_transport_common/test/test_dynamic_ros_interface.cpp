@@ -96,7 +96,7 @@ TEST_F(DynamicRosInterfaceTest, GetFieldTypeInfoPrimitive)
 
   EXPECT_EQ(info.field_name, "x");
   EXPECT_TRUE(info.isPrimitive());
-  EXPECT_EQ(info.asPrimitive(), PrimitiveTypeId::Double);
+  EXPECT_EQ(info.asPrimitive(), PrimitiveType::Double);
 }
 
 TEST_F(DynamicRosInterfaceTest, GetFieldTypeInfoCompound)
@@ -164,7 +164,7 @@ TEST_F(DynamicRosInterfaceTest, GetFieldListNested)
 
   for (const auto & field : fields) {
     EXPECT_TRUE(field.isPrimitive());
-    EXPECT_EQ(field.asPrimitive(), PrimitiveTypeId::Double);
+    EXPECT_EQ(field.asPrimitive(), PrimitiveType::Double);
 
     if (field.field_name == "x")
       has_x = true;

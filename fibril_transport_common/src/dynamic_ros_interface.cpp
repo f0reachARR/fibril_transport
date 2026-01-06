@@ -21,27 +21,27 @@ FieldType messageToFieldType(const ros_babel_fish::Message & message)
   } else {
     switch (message.type()) {
       case ros_babel_fish::MessageType::Bool:
-        return PrimitiveTypeId::Bool;
+        return PrimitiveType::Bool;
       case ros_babel_fish::MessageType::Int8:
-        return PrimitiveTypeId::Int8;
+        return PrimitiveType::Int8;
       case ros_babel_fish::MessageType::UInt8:
-        return PrimitiveTypeId::UInt8;
+        return PrimitiveType::UInt8;
       case ros_babel_fish::MessageType::Int16:
-        return PrimitiveTypeId::Int16;
+        return PrimitiveType::Int16;
       case ros_babel_fish::MessageType::UInt16:
-        return PrimitiveTypeId::UInt16;
+        return PrimitiveType::UInt16;
       case ros_babel_fish::MessageType::Int32:
-        return PrimitiveTypeId::Int32;
+        return PrimitiveType::Int32;
       case ros_babel_fish::MessageType::UInt32:
-        return PrimitiveTypeId::UInt32;
+        return PrimitiveType::UInt32;
       case ros_babel_fish::MessageType::Int64:
-        return PrimitiveTypeId::Int64;
+        return PrimitiveType::Int64;
       case ros_babel_fish::MessageType::UInt64:
-        return PrimitiveTypeId::UInt64;
+        return PrimitiveType::UInt64;
       case ros_babel_fish::MessageType::Float:
-        return PrimitiveTypeId::Float;
+        return PrimitiveType::Float;
       case ros_babel_fish::MessageType::Double:
-        return PrimitiveTypeId::Double;
+        return PrimitiveType::Double;
       default:
         throw std::runtime_error("Unknown ROS type: " + std::to_string(message.type()));
     }

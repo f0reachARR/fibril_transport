@@ -2,6 +2,7 @@
 
 #include "fibril_transport_common/attribute_system.hpp"
 #include "fibril_transport_common/definition_descriptors.hpp"
+#include "fibril_transport_common/ros_attribute.hpp"
 
 using namespace fibril_transport_common;
 

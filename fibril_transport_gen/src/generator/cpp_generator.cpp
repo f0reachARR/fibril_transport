@@ -275,49 +275,45 @@ std::string CppGenerator::generateNodeClass(const NodeDefinition & node, const S
   return ss.str();
 }
 
-std::string CppGenerator::toCppType(const Type & type)
+std::string CppGenerator::toCppType(const TypeDescriptor & type)
 {
-  return std::visit(
-    [this](const auto & t) -> std::string {
-      using T = std::decay_t<decltype(t)>;
+  using fibril_transport_common::overload;
 
-      if constexpr (std::is_same_v<T, PrimitiveType>) {
-        switch (t) {
-          case PrimitiveType::Bool:
-            return "bool";
-          case PrimitiveType::Int8:
-            return "int8_t";
-          case PrimitiveType::UInt8:
-            return "uint8_t";
-          case PrimitiveType::Int16:
-            return "int16_t";
-          case PrimitiveType::UInt16:
-            return "uint16_t";
-          case PrimitiveType::Int32:
-            return "int32_t";
-          case PrimitiveType::UInt32:
-            return "uint32_t";
-          case PrimitiveType::Int64:
-            return "int64_t";
-          case PrimitiveType::UInt64:
-            return "uint64_t";
-          case PrimitiveType::Float:
-            return "float";
-          case PrimitiveType::Double:
-            return "double";
-          default:
-            return "int32_t";
-        }
-      } else if constexpr (std::is_same_v<T, StructType>) {
-        return t.name;
-      } else if constexpr (std::is_same_v<T, ArrayType>) {
-        std::string elem_type = toCppType(*t.element_type);
-        return elem_type + "[" + std::to_string(t.size) + "]";
-      }
+  if (type.isPrimitive()) {
+    switch (type.asPrimitive()) {
+      case PrimitiveType::Bool:
+        return "bool";
+      case PrimitiveType::Int8:
+        return "int8_t";
+      case PrimitiveType::UInt8:
+        return "uint8_t";
+      case PrimitiveType::Int16:
+        return "int16_t";
+      case PrimitiveType::UInt16:
+        return "uint16_t";
+      case PrimitiveType::Int32:
+        return "int32_t";
+      case PrimitiveType::UInt32:
+        return "uint32_t";
+      case PrimitiveType::Int64:
+        return "int64_t";
+      case PrimitiveType::UInt64:
+        return "uint64_t";
+      case PrimitiveType::Float:
+        return "float";
+      case PrimitiveType::Double:
+        return "double";
+      default:
+        return "int32_t";
+    }
+  } else if (type.isStruct()) {
+    return type.asStructName();
+  } else if (type.isArray()) {
+    std::string elem_type = toCppType(type.arrayElement());
+    return elem_type + "[" + std::to_string(type.arraySize()) + "]";
+  }
 
-      return "void";
-    },
-    type.value);
+  return "void";
 }
 
 std::string CppGenerator::toSnakeCase(const std::string & str)
@@ -357,7 +353,7 @@ std::string CppGenerator::toPascalCase(const std::string & str)
 }
 
 size_t CppGenerator::calculateMaxMappings(
-  const std::vector<Port> & ports, bool is_rx, const SourceFile & source)
+  const std::vector<AstPort> & ports, bool is_rx, const SourceFile & source)
 {
   size_t total = 0;
 
@@ -365,7 +361,7 @@ size_t CppGenerator::calculateMaxMappings(
     bool matches = is_rx ? isSubPort(port) : isPubPort(port);
     if (!matches) continue;
 
-    const Type & data_type = getPortDataType(port);
+    const TypeDescriptor & data_type = getPortDataType(port);
     size_t data_size = size_calc_.calculateSize(data_type, source);
 
     // フレーム分割数 = ceil(データサイズ / CAN_FRAME_SIZE)
@@ -382,7 +378,7 @@ size_t CppGenerator::calculateDataSize(const NodeDefinition & node, const Source
 
   for (const auto & port : node.ports) {
     if (isPubPort(port) || isSubPort(port)) {
-      const Type & data_type = getPortDataType(port);
+      const TypeDescriptor & data_type = getPortDataType(port);
       total += size_calc_.calculateSize(data_type, source);
     }
   }
@@ -404,16 +400,16 @@ std::string CppGenerator::getPortName(const Port & port)
   return std::visit([](const auto & p) { return p.name; }, port);
 }
 
-const Type & CppGenerator::getPortDataType(const Port & port)
+const TypeDescriptor & CppGenerator::getPortDataType(const Port & port)
 {
   return std::visit(
-    [](const auto & p) -> const Type & {
+    [](const auto & p) -> const TypeDescriptor & {
       using T = std::decay_t<decltype(p)>;
       if constexpr (std::is_same_v<T, PubPort> || std::is_same_v<T, SubPort>) {
         return p.data_type;
       }
       // ServicePortの場合はダミーを返す（呼ばれないはず）
-      static Type dummy = Type::makePrimitive(PrimitiveType::Int32, 0, 0);
+      static TypeDescriptor dummy = TypeDescriptor::makePrimitive(PrimitiveType::Int32);
       return dummy;
     },
     port);

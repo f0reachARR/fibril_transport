@@ -40,12 +40,12 @@ private:
   SyntaxDeclaration parseSyntaxDeclaration(TSNode node, const std::string & source);
   PackageDeclaration parsePackageDeclaration(TSNode node, const std::string & source);
   ImportDeclaration parseImportDeclaration(TSNode node, const std::string & source);
-  StructDefinition parseStructDefinition(TSNode node, const std::string & source);
+  AstStructDescriptor parseStructDefinition(TSNode node, const std::string & source);
   NodeDefinition parseNodeDefinition(TSNode node, const std::string & source);
-  FieldDeclaration parseFieldDeclaration(TSNode node, const std::string & source);
-  Port parsePort(TSNode node, const std::string & source);
-  Type parseType(TSNode node, const std::string & source);
-  Attribute parseAttribute(TSNode node, const std::string & source);
+  AstFieldDescriptor parseFieldDeclaration(TSNode node, const std::string & source);
+  AstPort parsePort(TSNode node, const std::string & source);
+  TypeDescriptor parseType(TSNode node, const std::string & source);
+  void parseAttributeInto(TSNode node, const std::string & source, AttributeList & attr_list);
 
   // ヘルパー関数
   std::string getNodeText(TSNode node, const std::string & source);

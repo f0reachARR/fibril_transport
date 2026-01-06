@@ -1,5 +1,7 @@
 #include "parser.hpp"
 
+#include <fibril_transport_common/attribute_system.hpp>
+#include <fibril_transport_common/ros_attribute.hpp>
 #include <fstream>
 #include <iostream>
 #include <sstream>
@@ -138,11 +140,14 @@ ImportDeclaration Parser::parseImportDeclaration(TSNode node, const std::string 
   return decl;
 }
 
-StructDefinition Parser::parseStructDefinition(TSNode node, const std::string & source)
+AstStructDescriptor Parser::parseStructDefinition(TSNode node, const std::string & source)
 {
-  StructDefinition def;
-  def.line = ts_node_start_point(node).row + 1;
-  def.column = ts_node_start_point(node).column + 1;
+  size_t line = ts_node_start_point(node).row + 1;
+  size_t column = ts_node_start_point(node).column + 1;
+
+  std::string name;
+  std::vector<FieldDescriptor> fields;
+  AttributeList attributes;
 
   uint32_t count = ts_node_child_count(node);
   for (uint32_t i = 0; i < count; ++i) {
@@ -150,15 +155,17 @@ StructDefinition Parser::parseStructDefinition(TSNode node, const std::string & 
     std::string type = ts_node_type(child);
 
     if (type == "attribute") {
-      def.attributes.push_back(parseAttribute(child, source));
+      parseAttributeInto(child, source, attributes);
     } else if (type == "identifier") {
-      def.name = getNodeText(child, source);
+      name = getNodeText(child, source);
     } else if (type == "field_declaration") {
-      def.fields.push_back(parseFieldDeclaration(child, source));
+      auto field_node = parseFieldDeclaration(child, source);
+      fields.push_back(std::move(field_node));
     }
   }
 
-  return def;
+  StructDescriptor desc(std::move(name), std::move(fields), std::move(attributes));
+  return AstStructDescriptor(std::move(desc), line, column);
 }
 
 NodeDefinition Parser::parseNodeDefinition(TSNode node, const std::string & source)
@@ -183,48 +190,52 @@ NodeDefinition Parser::parseNodeDefinition(TSNode node, const std::string & sour
   return def;
 }
 
-FieldDeclaration Parser::parseFieldDeclaration(TSNode node, const std::string & source)
+AstFieldDescriptor Parser::parseFieldDeclaration(TSNode node, const std::string & source)
 {
-  FieldDeclaration field;
-  field.line = ts_node_start_point(node).row + 1;
-  field.column = ts_node_start_point(node).column + 1;
+  size_t line = ts_node_start_point(node).row + 1;
+  size_t column = ts_node_start_point(node).column + 1;
+
+  std::string name;
+  TypeDescriptor type = TypeDescriptor::makePrimitive(PrimitiveType::Int32);
+  AttributeList attributes;
+  bool has_type = false;
 
   uint32_t count = ts_node_child_count(node);
-  bool has_type = false;
 
   for (uint32_t i = 0; i < count; ++i) {
     TSNode child = ts_node_child(node, i);
-    std::string type = ts_node_type(child);
+    std::string child_type = ts_node_type(child);
 
-    if (type == "attribute") {
-      field.attributes.push_back(parseAttribute(child, source));
-    } else if (type == "type_spec" && !has_type) {
-      field.type = parseType(child, source);
+    if (child_type == "attribute") {
+      parseAttributeInto(child, source, attributes);
+    } else if (child_type == "type_spec" && !has_type) {
+      type = parseType(child, source);
       has_type = true;
-    } else if (type == "identifier" && has_type) {
-      field.name = getNodeText(child, source);
-    } else if (type == "array_spec") {
+    } else if (child_type == "identifier" && has_type) {
+      name = getNodeText(child, source);
+    } else if (child_type == "array_spec") {
       TSNode size_node = ts_node_child(child, 1);
       std::string size_str = getNodeText(size_node, source);
       size_t size = std::stoul(size_str);
-      field.type = Type::makeArray(std::move(field.type), size, field.line, field.column);
+      type = TypeDescriptor::makeArray(std::move(type), size);
     }
   }
 
-  return field;
+  FieldDescriptor desc(std::move(name), std::move(type), std::move(attributes));
+  return AstFieldDescriptor(std::move(desc), line, column);
 }
 
-Port Parser::parsePort(TSNode node, const std::string & source)
+AstPort Parser::parsePort(TSNode node, const std::string & source)
 {
   std::string port_type = ts_node_type(node);
   size_t line = ts_node_start_point(node).row + 1;
   size_t column = ts_node_start_point(node).column + 1;
 
-  std::vector<Attribute> attributes;
+  AttributeList attributes;
   std::string name;
-  Type data_type = Type::makePrimitive(PrimitiveType::Int32, 0, 0);
-  Type request_type = Type::makePrimitive(PrimitiveType::Int32, 0, 0);
-  Type response_type = Type::makePrimitive(PrimitiveType::Int32, 0, 0);
+  TypeDescriptor data_type = TypeDescriptor::makePrimitive(PrimitiveType::Int32);
+  TypeDescriptor request_type = TypeDescriptor::makePrimitive(PrimitiveType::Int32);
+  TypeDescriptor response_type = TypeDescriptor::makePrimitive(PrimitiveType::Int32);
 
   uint32_t count = ts_node_child_count(node);
   int type_count = 0;
@@ -234,7 +245,7 @@ Port Parser::parsePort(TSNode node, const std::string & source)
     std::string type = ts_node_type(child);
 
     if (type == "attribute") {
-      attributes.push_back(parseAttribute(child, source));
+      parseAttributeInto(child, source, attributes);
     } else if (type == "identifier") {
       name = getNodeText(child, source);
     } else if (type == "type_spec") {
@@ -252,58 +263,44 @@ Port Parser::parsePort(TSNode node, const std::string & source)
   }
 
   // Port variantを構築
-  if (port_type == "pub_port") {
-    PubPort pub;
-    pub.attributes = std::move(attributes);
-    pub.name = std::move(name);
-    pub.data_type = std::move(data_type);
-    pub.line = line;
-    pub.column = column;
-    return pub;
-  } else if (port_type == "sub_port") {
-    SubPort sub;
-    sub.attributes = std::move(attributes);
-    sub.name = std::move(name);
-    sub.data_type = std::move(data_type);
-    sub.line = line;
-    sub.column = column;
-    return sub;
-  } else {  // service_port
-    ServicePort svc;
-    svc.attributes = std::move(attributes);
-    svc.name = std::move(name);
-    svc.request_type = std::move(request_type);
-    svc.response_type = std::move(response_type);
-    svc.line = line;
-    svc.column = column;
-    return svc;
-  }
+  Port port_variant = ([&]() -> Port {
+    if (port_type == "pub_port") {
+      return PubPort(std::move(name), std::move(data_type), std::move(attributes));
+    } else if (port_type == "sub_port") {
+      return SubPort(std::move(name), std::move(data_type), std::move(attributes));
+    } else {  // service_port
+      return ServicePort(
+        std::move(name), std::move(request_type), std::move(response_type), std::move(attributes));
+    }
+  })();
+
+  return AstPort(std::move(port_variant), line, column);
 }
 
-Type Parser::parseType(TSNode node, const std::string & source)
+TypeDescriptor Parser::parseType(TSNode node, const std::string & source)
 {
-  size_t line = ts_node_start_point(node).row + 1;
-  size_t column = ts_node_start_point(node).column + 1;
-
   TSNode child = ts_node_child(node, 0);
   std::string child_type = ts_node_type(child);
 
   if (child_type == "primitive_type") {
     std::string type_name = getNodeText(child, source);
-    return Type::makePrimitive(parsePrimitiveType(type_name), line, column);
+    return TypeDescriptor::makePrimitive(parsePrimitiveType(type_name));
   } else if (child_type == "qualified_identifier") {
     std::string name = getNodeText(child, source);
-    return Type::makeStruct(name, line, column);
+    return TypeDescriptor::makeStruct(name);
   }
 
-  return Type::makePrimitive(PrimitiveType::Int32, line, column);
+  return TypeDescriptor::makePrimitive(PrimitiveType::Int32);
 }
 
-Attribute Parser::parseAttribute(TSNode node, const std::string & source)
+void Parser::parseAttributeInto(TSNode node, const std::string & source, AttributeList & attr_list)
 {
-  Attribute attr;
-  attr.line = ts_node_start_point(node).row + 1;
-  attr.column = ts_node_start_point(node).column + 1;
+  size_t line = ts_node_start_point(node).row + 1;
+  size_t column = ts_node_start_point(node).column + 1;
+
+  std::string attr_name;
+  std::vector<std::string> string_args;
+  std::vector<double> number_args;
 
   uint32_t count = ts_node_child_count(node);
   bool found_name = false;
@@ -313,13 +310,13 @@ Attribute Parser::parseAttribute(TSNode node, const std::string & source)
     std::string type = ts_node_type(child);
 
     if (type == "identifier" && !found_name) {
-      attr.name = getNodeText(child, source);
+      attr_name = getNodeText(child, source);
       found_name = true;
     } else if (type == "attribute_item") {
       TSNode item_id = ts_node_child(child, 0);
       if (ts_node_child_count(item_id) > 0 && std::string(ts_node_type(item_id)) == "identifier") {
-        if (attr.name.empty()) {
-          attr.name = getNodeText(item_id, source);
+        if (attr_name.empty()) {
+          attr_name = getNodeText(item_id, source);
           found_name = true;
         }
       }
@@ -328,25 +325,42 @@ Attribute Parser::parseAttribute(TSNode node, const std::string & source)
         TSNode arg = ts_node_child(child, j);
         std::string arg_type = ts_node_type(arg);
         if (arg_type == "string_literal") {
-          attr.arguments.push_back(unquoteString(getNodeText(arg, source)));
+          string_args.push_back(unquoteString(getNodeText(arg, source)));
         } else if (arg_type == "number_literal") {
           std::string num_str = getNodeText(arg, source);
-          attr.arguments.push_back(std::stod(num_str));
+          number_args.push_back(std::stod(num_str));
         } else if (arg_type == "qualified_identifier") {
-          attr.arguments.push_back(getNodeText(arg, source));
+          string_args.push_back(getNodeText(arg, source));
         }
       }
     } else if (type == "string_literal") {
-      attr.arguments.push_back(unquoteString(getNodeText(child, source)));
+      string_args.push_back(unquoteString(getNodeText(child, source)));
     } else if (type == "number_literal") {
       std::string num_str = getNodeText(child, source);
-      attr.arguments.push_back(std::stod(num_str));
+      number_args.push_back(std::stod(num_str));
     } else if (type == "qualified_identifier") {
-      attr.arguments.push_back(getNodeText(child, source));
+      string_args.push_back(getNodeText(child, source));
     }
   }
 
-  return attr;
+  // Create appropriate attribute based on name
+  using namespace fibril_transport_common;
+
+  if (attr_name == "ros_type" && !string_args.empty()) {
+    attr_list.add(std::make_unique<RosTypeAttribute>(string_args[0]));
+  } else if (attr_name == "ros_map" && !string_args.empty()) {
+    attr_list.add(std::make_unique<RosMapAttribute>(string_args[0]));
+  } else if (attr_name == "ros" && !string_args.empty()) {
+    attr_list.add(std::make_unique<RosAttribute>(string_args[0]));
+  } else if (attr_name == "unit" && !string_args.empty()) {
+    attr_list.add(std::make_unique<UnitAttribute>(string_args[0]));
+  } else if (attr_name == "ros_frame_id" && !string_args.empty()) {
+    attr_list.add(std::make_unique<RosFrameIdAttribute>(string_args[0]));
+  } else if (attr_name == "ros_service" && !string_args.empty()) {
+    attr_list.add(std::make_unique<RosServiceAttribute>(string_args[0]));
+  } else {
+    reportError("Unknown attribute: " + attr_name, line, column);
+  }
 }
 
 std::string Parser::getNodeText(TSNode node, const std::string & source)
