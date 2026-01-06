@@ -557,7 +557,6 @@ void Parser::reportError(const std::string & message, size_t line, size_t column
   }
   oss << ": " << message;
 
-  std::cout << oss.str() << std::endl;
   errors_.push_back(oss.str());
 }
 
