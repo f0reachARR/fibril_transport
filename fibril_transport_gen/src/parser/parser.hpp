@@ -5,6 +5,7 @@
 #include <filesystem>
 
 #include "ast.hpp"
+#include "node_cursor.hpp"
 
 namespace fibril
 {
@@ -54,6 +55,9 @@ private:
 
   // インポート解決
   std::string resolveImportPath(const std::string & import_path, const std::string & current_file);
+
+  // Tree-sitter error detection
+  bool hasTreeSitterErrors(TSNode node);
 
   // エラー報告
   void reportError(const std::string & message, size_t line, size_t column);

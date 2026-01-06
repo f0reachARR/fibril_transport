@@ -21,13 +21,19 @@ target_include_directories(tree_sitter_fibril PUBLIC
   grammar/src
 )
 
-add_executable(fibril_transport_gen
-  src/main.cpp
+set(LIB_SOURCES
   src/parser/parser.cpp
+  src/parser/node_cursor.cpp
+  src/parser/attribute_parser.cpp
   src/parser/ast.cpp
   src/validator/validator.cpp
   src/validator/ros_validator.cpp
   src/generator/cpp_generator.cpp
+)
+
+add_executable(fibril_transport_gen
+  src/main.cpp
+  ${LIB_SOURCES}
 )
 
 target_include_directories(fibril_transport_gen PRIVATE
@@ -55,8 +61,7 @@ if(BUILD_TESTING)
   
   ament_add_gtest(test_parser
     test/test_parser.cpp
-    src/parser/parser.cpp
-    src/parser/ast.cpp
+    ${LIB_SOURCES}
   )
   
   target_include_directories(test_parser PRIVATE
@@ -77,10 +82,7 @@ if(BUILD_TESTING)
   
   ament_add_gtest(test_validator
     test/test_validator.cpp
-    src/parser/parser.cpp
-    src/parser/ast.cpp
-    src/validator/validator.cpp
-    src/validator/ros_validator.cpp
+    ${LIB_SOURCES}
   )
   
   target_include_directories(test_validator PRIVATE
@@ -101,10 +103,7 @@ if(BUILD_TESTING)
   
   ament_add_gtest(test_ros_validator
     test/test_ros_validator.cpp
-    src/parser/parser.cpp
-    src/parser/ast.cpp
-    src/validator/validator.cpp
-    src/validator/ros_validator.cpp
+    ${LIB_SOURCES}
   )
   
   target_include_directories(test_ros_validator PRIVATE

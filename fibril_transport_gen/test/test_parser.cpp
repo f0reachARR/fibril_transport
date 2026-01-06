@@ -116,6 +116,9 @@ node TestNode {
     
     #[ros("/velocity")]
     sub Vector3 vel;
+
+    #[ros("/odom")]
+    pub Vector3 odom;
 }
 )";
 
@@ -129,7 +132,7 @@ node TestNode {
       .name,
     "TestNode");
 
-  ASSERT_EQ(ast.nodes[0].ports.size(), 2);
+  ASSERT_EQ(ast.nodes[0].ports.size(), 3);
 
   // Pub port
   ASSERT_TRUE(std::holds_alternative<fibril::PubPort>(ast.nodes[0].ports[0]));
@@ -138,12 +141,21 @@ node TestNode {
   EXPECT_TRUE(pub.data_type.isStruct());
   EXPECT_EQ(pub.data_type.asStructName(), "Vector3");
 
+  EXPECT_EQ(pub.attributes.size(), 1);
+
   // Sub port
   ASSERT_TRUE(std::holds_alternative<fibril::SubPort>(ast.nodes[0].ports[1]));
   const auto & sub = std::get<fibril::SubPort>(ast.nodes[0].ports[1]);
   EXPECT_EQ(sub.name, "vel");
   EXPECT_TRUE(sub.data_type.isStruct());
   EXPECT_EQ(sub.data_type.asStructName(), "Vector3");
+
+  // Pub port
+  ASSERT_TRUE(std::holds_alternative<fibril::PubPort>(ast.nodes[0].ports[2]));
+  const auto & pub2 = std::get<fibril::PubPort>(ast.nodes[0].ports[2]);
+  EXPECT_EQ(pub2.name, "odom");
+  EXPECT_TRUE(pub2.data_type.isStruct());
+  EXPECT_EQ(pub2.data_type.asStructName(), "Vector3");
 
   EXPECT_TRUE(parser->getErrors().empty());
 }
