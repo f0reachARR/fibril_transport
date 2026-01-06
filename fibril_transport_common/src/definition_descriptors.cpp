@@ -1,6 +1,9 @@
 #include "fibril_transport_common/definition_descriptors.hpp"
 
+#include <algorithm>
 #include <cstring>
+#include <iterator>
+#include <optional>
 #include <stdexcept>
 
 namespace fibril_transport_common
@@ -123,128 +126,122 @@ std::vector<uint8_t> readBytes(const std::vector<uint8_t> & data, size_t & offse
   return bytes;
 }
 
-// Serialize TypeDescriptor
-std::vector<uint8_t> serializeType(const TypeDescriptor & type, const NodeDescriptor & node);
-
 // Serialize field for struct type
 void serializeField(
-  std::vector<uint8_t> & buffer, const FieldDescriptor & field, const NodeDescriptor & node)
+  std::vector<uint8_t> & buffer, const FieldDescriptor & field,
+  const std::vector<StructDescriptor> & structs)
 {
   // Field name length and name
   writeUInt8(buffer, static_cast<uint8_t>(field.name.size()));
   writeString(buffer, field.name);
 
-  // For now, only support primitive types or primitive arrays
-  if (field.type.isPrimitive()) {
-    // Primitive type
-    writeUInt8(buffer, static_cast<uint8_t>(field.type.asPrimitive()));
-    writeUInt16(buffer, 0);  // Array size = 0 (scalar)
-  } else if (field.type.isArray() && field.type.arrayElement().isPrimitive()) {
-    // Primitive array
-    writeUInt8(buffer, static_cast<uint8_t>(field.type.arrayElement().asPrimitive()));
-    writeUInt16(buffer, static_cast<uint16_t>(field.type.arraySize()));
+  // Determine the inner type (for arrays, this is the element type)
+  const auto & inner_type = field.type.isArray() ? field.type.arrayElement() : field.type;
+
+  // Type Kind: 0=primitive, 1=struct
+  if (inner_type.isPrimitive()) {
+    writeUInt8(buffer, 0);                                               // Type Kind = primitive
+    writeUInt8(buffer, static_cast<uint8_t>(inner_type.asPrimitive()));  // Type ID
+  } else if (inner_type.isStruct()) {
+    writeUInt8(buffer, 1);  // Type Kind = struct
+    // Find struct index
+    auto it = std::find_if(
+      structs.begin(), structs.end(),
+      [inner_type](const StructDescriptor & s) { return s.name == inner_type.asStructName(); });
+    if (it == structs.end()) {
+      throw std::runtime_error("Struct not found: " + inner_type.asStructName());
+    }
+    writeUInt8(buffer, std::distance(structs.begin(), it));  // Struct Index
   } else {
-    throw std::runtime_error(
-      "Only primitive types and primitive arrays are supported in binary format");
+    throw std::runtime_error("Unsupported field type");
   }
+
+  // Array Size: 0=scalar, >0=fixed array
+  writeUInt8(buffer, field.type.isArray() ? static_cast<uint8_t>(field.type.arraySize()) : 0);
+
+  // Metadata (attributes)
+  const auto metadata = field.attributes.serializeToBinary();
+  writeBytes(buffer, metadata);
 }
 
-// Serialize TypeDescriptor to TypeInfo format
-std::vector<uint8_t> serializeType(const TypeDescriptor & type, const NodeDescriptor & node)
+// Serialize port type in simple format (Type Kind + Type)
+void serializePortType(
+  std::vector<uint8_t> & buffer, const TypeDescriptor & type,
+  const std::vector<StructDescriptor> & structs)
 {
-  std::vector<uint8_t> buffer;
-
   if (type.isPrimitive()) {
-    // Type kind: Primitive
-    writeUInt8(buffer, 0);
-    // Primitive type ID
-    writeUInt8(buffer, static_cast<uint8_t>(type.asPrimitive()));
+    writeUInt8(buffer, 0);                                         // Type Kind = primitive
+    writeUInt8(buffer, static_cast<uint8_t>(type.asPrimitive()));  // Type ID
   } else if (type.isStruct()) {
-    // Type kind: Struct
-    writeUInt8(buffer, 1);
-
-    // Find struct definition
-    const StructDescriptor * struct_def = node.findStruct(type.asStructName());
-    if (!struct_def) {
+    writeUInt8(buffer, 1);  // Type Kind = struct
+    // Find struct index
+    auto it = std::find_if(structs.begin(), structs.end(), [type](const StructDescriptor & s) {
+      return s.name == type.asStructName();
+    });
+    if (it == structs.end()) {
       throw std::runtime_error("Struct not found: " + type.asStructName());
     }
-
-    // Struct name
-    writeUInt8(buffer, static_cast<uint8_t>(struct_def->name.size()));
-    writeString(buffer, struct_def->name);
-
-    // Field count
-    writeUInt8(buffer, static_cast<uint8_t>(struct_def->fields.size()));
-
-    // Fields
-    for (const auto & field : struct_def->fields) {
-      serializeField(buffer, field, node);
-    }
+    writeUInt8(buffer, std::distance(structs.begin(), it));  // Struct Index
   } else {
-    throw std::runtime_error("Arrays are not supported as top-level port types in binary format");
+    throw std::runtime_error("Arrays are not supported as top-level port types");
   }
-
-  return buffer;
 }
 
-// Deserialize TypeDescriptor
-TypeDescriptor deserializeType(
-  const std::vector<uint8_t> & data, size_t & offset, std::vector<StructDescriptor> & structs);
-
 // Deserialize field
-FieldDescriptor deserializeField(const std::vector<uint8_t> & data, size_t & offset)
+FieldDescriptor deserializeField(
+  const std::vector<uint8_t> & data, size_t & offset, const std::vector<StructDescriptor> & structs)
 {
   // Field name
   uint8_t name_len = readUInt8(data, offset);
   auto field_name = readString(data, offset, name_len);
 
-  // Primitive type
-  uint8_t prim_type = readUInt8(data, offset);
-  uint16_t array_size = readUInt16(data, offset);
-
-  auto type =
-    array_size == 0
-      ? TypeDescriptor::makePrimitive(static_cast<PrimitiveType>(prim_type))
-      : TypeDescriptor::makeArray(
-          TypeDescriptor::makePrimitive(static_cast<PrimitiveType>(prim_type)), array_size);
-
-  return FieldDescriptor{.name = std::move(field_name), .type = std::move(type)};
-}
-
-// Deserialize TypeDescriptor from TypeInfo
-TypeDescriptor deserializeType(
-  const std::vector<uint8_t> & data, size_t & offset, std::vector<StructDescriptor> & structs)
-{
+  // Type Kind: 0=primitive, 1=struct
   uint8_t type_kind = readUInt8(data, offset);
 
-  if (type_kind == 0) {
-    // Primitive
-    uint8_t prim_type = readUInt8(data, offset);
-    return TypeDescriptor::makePrimitive(static_cast<PrimitiveType>(prim_type));
-  } else if (type_kind == 1) {
-    // Struct
-    StructDescriptor struct_def;
+  // Type: Primitive Type ID or Struct Index
+  uint8_t type_id = readUInt8(data, offset);
 
-    // Struct name
-    uint8_t name_len = readUInt8(data, offset);
-    struct_def.name = readString(data, offset, name_len);
+  // Array Size: 0=scalar, >0=fixed array
+  uint8_t array_size = readUInt8(data, offset);
 
-    // Field count
-    uint8_t field_count = readUInt8(data, offset);
+  // Metadata (attributes)
+  AttributeList attrs = AttributeList::deserializeFromBinary(data, offset);
 
-    // Fields
-    for (uint8_t i = 0; i < field_count; ++i) {
-      struct_def.fields.push_back(deserializeField(data, offset));
-    }
-
-    // Add to structs list
-    std::string struct_name = struct_def.name;
-    structs.push_back(std::move(struct_def));
-
-    return TypeDescriptor::makeStruct(struct_name);
-  } else {
-    throw std::runtime_error("Unknown type kind");
+  if (type_kind != 0 && type_kind != 1) {
+    throw std::runtime_error("Unknown type kind in field");
   }
+
+  TypeDescriptor type = type_kind == 0
+                          ? TypeDescriptor::makePrimitive(static_cast<PrimitiveType>(type_id))
+                          : TypeDescriptor::makeStruct(structs.at(type_id).name);
+
+  // Wrap in array if needed
+  if (array_size > 0) {
+    type = TypeDescriptor::makeArray(type, array_size);
+  }
+
+  return FieldDescriptor(field_name, type, std::move(attrs));
+}
+
+// Deserialize port type in simple format (Type Kind + Type)
+TypeDescriptor deserializePortType(
+  const std::vector<uint8_t> & data, size_t & offset, const std::vector<StructDescriptor> & structs)
+{
+  // Type Kind: 0=primitive, 1=struct
+  uint8_t type_kind = readUInt8(data, offset);
+
+  // Type: Primitive Type ID or Struct Index
+  uint8_t type_id = readUInt8(data, offset);
+
+  if (type_kind != 0 && type_kind != 1) {
+    throw std::runtime_error("Unknown type kind in port");
+  }
+
+  TypeDescriptor type = type_kind == 0
+                          ? TypeDescriptor::makePrimitive(static_cast<PrimitiveType>(type_id))
+                          : TypeDescriptor::makeStruct(structs.at(type_id).name);
+
+  return type;
 }
 
 }  // anonymous namespace
@@ -270,9 +267,13 @@ AttributeList & getPortAttributesMut(Port & port)
 
 PortDirection getPortDirection(const Port & port)
 {
-  if (std::holds_alternative<SubPort>(port)) return PortDirection::Sub;
-  if (std::holds_alternative<PubPort>(port)) return PortDirection::Pub;
-  return PortDirection::Service;
+  return std::visit(
+    overload{
+      [](const SubPort &) -> PortDirection { return PortDirection::Sub; },
+      [](const PubPort &) -> PortDirection { return PortDirection::Pub; },
+      [](const ServicePort &) -> PortDirection { return PortDirection::Service; },
+    },
+    port);
 }
 
 // ========================================
@@ -313,8 +314,29 @@ std::vector<uint8_t> NodeDescriptor::serializeToBinary() const
   writeUInt8(buffer, static_cast<uint8_t>(name.size()));
   writeString(buffer, name);
 
+  // Struct count
+  writeUInt8(buffer, static_cast<uint8_t>(structs.size()));
+
   // Port count
   writeUInt8(buffer, static_cast<uint8_t>(ports.size()));
+
+  // Struct entries
+  for (const auto & struct_def : structs) {
+    writeUInt8(buffer, static_cast<uint8_t>(struct_def.name.size()));
+    writeString(buffer, struct_def.name);
+
+    // Field count
+    writeUInt8(buffer, static_cast<uint8_t>(struct_def.fields.size()));
+
+    // Fields
+    for (const auto & field : struct_def.fields) {
+      serializeField(buffer, field, structs);
+    }
+
+    // Attributes
+    const auto metadata = struct_def.attributes.serializeToBinary();
+    writeBytes(buffer, metadata);
+  }
 
   // Port entries
   for (const auto & port : ports) {
@@ -327,21 +349,12 @@ std::vector<uint8_t> NodeDescriptor::serializeToBinary() const
         // Direction
         writeUInt8(buffer, static_cast<uint8_t>(getPortDirection(port)));
 
-        // Type info
-        std::vector<uint8_t> type_info;
+        // 1st Type (Type Kind + Type)
         if constexpr (std::is_same_v<std::decay_t<decltype(p)>, ServicePort>) {
-          type_info = serializeType(p.request_type, *this);
+          serializePortType(buffer, p.request_type, structs);
+          serializePortType(buffer, p.response_type, structs);
         } else {
-          type_info = serializeType(p.data_type, *this);
-        }
-
-        writeUInt16(buffer, static_cast<uint16_t>(type_info.size()));
-        writeBytes(buffer, type_info);
-
-        if constexpr (std::is_same_v<std::decay_t<decltype(p)>, ServicePort>) {
-          type_info = serializeType(p.response_type, *this);
-          writeUInt16(buffer, static_cast<uint16_t>(type_info.size()));
-          writeBytes(buffer, type_info);
+          serializePortType(buffer, p.data_type, structs);
         }
 
         // Metadata (attributes)
@@ -375,8 +388,31 @@ NodeDescriptor NodeDescriptor::deserializeFromBinary(const std::vector<uint8_t> 
   uint8_t name_len = readUInt8(data, offset);
   node.name = readString(data, offset, name_len);
 
+  // Struct count
+  uint8_t struct_count = readUInt8(data, offset);
+
   // Port count
   uint8_t port_count = readUInt8(data, offset);
+
+  // Struct entries
+  for (uint8_t i = 0; i < struct_count; ++i) {
+    // Struct name
+    uint8_t struct_name_len = readUInt8(data, offset);
+    StructDescriptor struct_def(readString(data, offset, struct_name_len));
+
+    // Field count
+    uint8_t field_count = readUInt8(data, offset);
+
+    // Fields
+    for (uint8_t j = 0; j < field_count; ++j) {
+      struct_def.fields.push_back(deserializeField(data, offset, node.structs));
+    }
+
+    // Attributes
+    struct_def.attributes = AttributeList::deserializeFromBinary(data, offset);
+
+    node.structs.push_back(std::move(struct_def));
+  }
 
   // Port entries
   for (uint8_t i = 0; i < port_count; ++i) {
@@ -385,37 +421,29 @@ NodeDescriptor NodeDescriptor::deserializeFromBinary(const std::vector<uint8_t> 
     std::string port_name = readString(data, offset, port_name_len);
 
     // Direction
-    uint8_t direction = readUInt8(data, offset);
+    PortDirection direction = static_cast<PortDirection>(readUInt8(data, offset));
 
-    // Type info
-    uint16_t type_info_len = readUInt16(data, offset);
-    size_t type_offset = offset;
-    TypeDescriptor first_data_type = deserializeType(data, offset, node.structs);
+    // 1st Type (Type Kind + Type)
+    TypeDescriptor first_type = deserializePortType(data, offset, node.structs);
+
+    // 2nd Type (for Service only)
+    std::optional<TypeDescriptor> second_type;
+    if (direction == PortDirection::Service) {
+      second_type = deserializePortType(data, offset, node.structs);
+    }
 
     // Metadata (attributes)
     AttributeList attrs = AttributeList::deserializeFromBinary(data, offset);
 
     // Create port based on direction
-    if (direction == static_cast<uint8_t>(PortDirection::Sub)) {
-      SubPort port{
-        .name = std::move(port_name),
-        .data_type = std::move(first_data_type),
-        .attributes = std::move(attrs)};
+    if (direction == PortDirection::Sub) {
+      SubPort port(port_name, first_type, std::move(attrs));
       node.ports.push_back(std::move(port));
-    } else if (direction == static_cast<uint8_t>(PortDirection::Pub)) {
-      PubPort port{
-        .name = std::move(port_name),
-        .data_type = std::move(first_data_type),
-        .attributes = std::move(attrs)};
+    } else if (direction == PortDirection::Pub) {
+      PubPort port(port_name, first_type, std::move(attrs));
       node.ports.push_back(std::move(port));
-    } else if (direction == static_cast<uint8_t>(PortDirection::Service)) {
-      uint16_t response_type_info_len = readUInt16(data, offset);
-      TypeDescriptor response_data_type = deserializeType(data, offset, node.structs);
-      ServicePort port{
-        .name = std::move(port_name),
-        .request_type = std::move(first_data_type),
-        .response_type = std::move(response_data_type),
-        .attributes = std::move(attrs)};
+    } else if (direction == PortDirection::Service) {
+      ServicePort port(port_name, first_type, *second_type, std::move(attrs));
       node.ports.push_back(std::move(port));
     }
   }

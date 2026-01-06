@@ -34,6 +34,16 @@ struct SubPort
   std::string name;
   TypeDescriptor data_type;
   AttributeList attributes;
+
+  explicit SubPort(std::string name, TypeDescriptor type)
+  : name(std::move(name)), data_type(std::move(type))
+  {
+  }
+
+  explicit SubPort(std::string name, TypeDescriptor type, AttributeList attrs)
+  : name(std::move(name)), data_type(std::move(type)), attributes(std::move(attrs))
+  {
+  }
 };
 
 /**
@@ -46,6 +56,16 @@ struct PubPort
   std::string name;
   TypeDescriptor data_type;
   AttributeList attributes;
+
+  explicit PubPort(std::string name, TypeDescriptor type)
+  : name(std::move(name)), data_type(std::move(type))
+  {
+  }
+
+  explicit PubPort(std::string name, TypeDescriptor type, AttributeList attrs)
+  : name(std::move(name)), data_type(std::move(type)), attributes(std::move(attrs))
+  {
+  }
 };
 
 /**
@@ -59,6 +79,23 @@ struct ServicePort
   TypeDescriptor request_type;
   TypeDescriptor response_type;
   AttributeList attributes;
+
+  explicit ServicePort(std::string name, TypeDescriptor request_type, TypeDescriptor response_type)
+  : name(std::move(name)),
+    request_type(std::move(request_type)),
+    response_type(std::move(response_type))
+  {
+  }
+
+  explicit ServicePort(
+    std::string name, TypeDescriptor request_type, TypeDescriptor response_type,
+    AttributeList attrs)
+  : name(std::move(name)),
+    request_type(std::move(request_type)),
+    response_type(std::move(response_type)),
+    attributes(std::move(attrs))
+  {
+  }
 };
 
 /**
@@ -67,6 +104,8 @@ struct ServicePort
  * A port can be one of: SubPort, PubPort, or ServicePort
  */
 using Port = std::variant<SubPort, PubPort, ServicePort>;
+
+using PortRef = std::variant<SubPort &, PubPort &, ServicePort &>;
 
 // ========================================
 // Port Helper Functions

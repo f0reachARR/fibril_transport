@@ -63,6 +63,31 @@ if(BUILD_TESTING)
   target_link_libraries(test_dynamic_ros_interface
     ${PROJECT_NAME}
   )
+  
+  # New tests for core components
+  ament_add_gtest(test_type_system
+    test/test_type_system.cpp
+  )
+  
+  target_link_libraries(test_type_system
+    ${PROJECT_NAME}
+  )
+  
+  ament_add_gtest(test_attribute_system
+    test/test_attribute_system.cpp
+  )
+  
+  target_link_libraries(test_attribute_system
+    ${PROJECT_NAME}
+  )
+  
+  ament_add_gtest(test_definition_descriptors
+    test/test_definition_descriptors.cpp
+  )
+  
+  target_link_libraries(test_definition_descriptors
+    ${PROJECT_NAME}
+  )
 endif()
 
 ament_export_targets(${PROJECT_NAME}Targets HAS_LIBRARY_TARGET)

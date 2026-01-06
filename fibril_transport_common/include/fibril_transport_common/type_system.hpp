@@ -7,8 +7,21 @@
 #include <variant>
 #include <vector>
 
+#include "fibril_transport_common/attribute_system.hpp"
+
 namespace fibril_transport_common
 {
+
+/**
+ * @brief Overload helper for std::visit
+ */
+template <class... Ts>
+struct overload : Ts...
+{
+  using Ts::operator()...;
+};
+template <class... Ts>
+overload(Ts...) -> overload<Ts...>;
 
 /**
  * @brief Primitive type enumeration (matching binary format IDs)
@@ -110,7 +123,17 @@ struct FieldDescriptor
 {
   std::string name;
   TypeDescriptor type;
-  std::optional<std::string> default_value;
+  AttributeList attributes;
+
+  explicit FieldDescriptor(std::string name, TypeDescriptor type)
+  : name(std::move(name)), type(std::move(type))
+  {
+  }
+
+  explicit FieldDescriptor(std::string name, TypeDescriptor type, AttributeList attributes)
+  : name(std::move(name)), type(std::move(type)), attributes(std::move(attributes))
+  {
+  }
 };
 
 /**
@@ -122,6 +145,7 @@ struct StructDescriptor
 {
   std::string name;
   std::vector<FieldDescriptor> fields;
+  AttributeList attributes;
 
   /**
      * @brief Find a field by name
@@ -129,6 +153,19 @@ struct StructDescriptor
      * @return Pointer to field, or nullptr if not found
      */
   const FieldDescriptor * findField(const std::string & name) const;
+
+  explicit StructDescriptor(std::string name) : name(std::move(name)) {}
+
+  explicit StructDescriptor(std::string name, std::vector<FieldDescriptor> fields)
+  : name(std::move(name)), fields(std::move(fields))
+  {
+  }
+
+  explicit StructDescriptor(
+    std::string name, std::vector<FieldDescriptor> fields, AttributeList attributes)
+  : name(std::move(name)), fields(std::move(fields)), attributes(std::move(attributes))
+  {
+  }
 };
 
 }  // namespace fibril_transport_common
