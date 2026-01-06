@@ -2,6 +2,7 @@
 
 #include <fibril_transport_common/dynamic_ros_interface.hpp>
 #include <fibril_transport_common/ros_attribute.hpp>
+#include <iostream>
 
 #include "validator/validator.hpp"
 
@@ -134,8 +135,16 @@ bool RosValidator::validateNode(
             all_valid = false;
           }
         },
-        [](const SubPort & sub_port) -> void {},
-        [](const PubPort & pub_port) -> void {},
+        [&](const SubPort & sub_port) -> void {
+          if (!validateRosPubSubTypeAttribute(sub_port.data_type, source, errors)) {
+            all_valid = false;
+          }
+        },
+        [&](const PubPort & pub_port) -> void {
+          if (!validateRosPubSubTypeAttribute(pub_port.data_type, source, errors)) {
+            all_valid = false;
+          }
+        },
       },
       port.get());
   }

@@ -140,9 +140,9 @@ struct Twist2D {
 
 node TestNode {
     #[ros("~/twist_pub")]
-    pub twist_pub(Twist2D);
+    pub Twist2D twist_pub;
     #[ros("~/twist_sub")]
-    sub twist_sub(Twist2D);
+    sub Twist2D twist_sub;
 }
 )";
 
@@ -152,6 +152,33 @@ node TestNode {
   bool valid = validator->validate(ast);
   EXPECT_TRUE(valid) << "Valid ROS pub/sub type should pass validation";
   EXPECT_TRUE(validator->getErrors().empty());
+}
+
+TEST_F(RosValidatorTest, PubSubWithoutRosType)
+{
+  const std::string source = R"(
+syntax = "fibril v2";
+package test;
+
+struct Twist2D {
+    float v;
+    float w;
+}
+
+node TestNode {
+    #[ros("~/twist_pub")]
+    pub Twist2D twist_pub;
+    #[ros("~/twist_sub")]
+    sub Twist2D twist_sub;
+}
+)";
+
+  auto ast = parser->parseFromString(source);
+  ASSERT_TRUE(parser->getErrors().empty());
+
+  bool valid = validator->validate(ast);
+  EXPECT_FALSE(valid) << "Pub/sub with struct without ros_type should fail validation";
+  ASSERT_FALSE(validator->getErrors().empty());
 }
 
 // ========== ROS Service Validation Tests ==========

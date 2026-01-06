@@ -191,7 +191,7 @@ struct Response {
 }
 
 node Device {
-    #[ros(std_srvs/srv/SetBool)]
+    #[ros_service(std_srvs/srv/SetBool)]
     service enable_motor(Request) -> Response;
 }
 )";
