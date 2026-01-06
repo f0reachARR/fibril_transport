@@ -123,15 +123,11 @@ SyntaxDeclaration Parser::parseSyntaxDeclaration(TSNode node, const std::string 
   decl.line = line;
   decl.column = column;
 
-  cursor.expect("syntax");
-  cursor.expect("=");
-
   // Expect string literal (mandatory)
   if (auto str_node = cursor.expect("string_literal")) {
     decl.version = unquoteString(getNodeText(*str_node, source));
   }
 
-  cursor.expect(";");
   cursor.expectEnd();
   return decl;
 }
@@ -147,15 +143,11 @@ PackageDeclaration Parser::parsePackageDeclaration(TSNode node, const std::strin
   decl.line = line;
   decl.column = column;
 
-  // Expect "package" keyword
-  cursor.expect("package");
-
   // Expect qualified identifier (mandatory)
   if (auto id_node = cursor.expect("qualified_identifier")) {
     decl.name = getNodeText(*id_node, source);
   }
 
-  cursor.expect(";");
   cursor.expectEnd();
   return decl;
 }
@@ -170,9 +162,6 @@ ImportDeclaration Parser::parseImportDeclaration(TSNode node, const std::string 
   auto [line, column] = cursor.currentLocation();
   decl.line = line;
   decl.column = column;
-
-  // Expect "import" keyword
-  cursor.expect("import");
 
   // Expect string literal (mandatory)
   if (auto str_node = cursor.expect("string_literal")) {
@@ -200,9 +189,6 @@ AstStructDescriptor Parser::parseStructDefinition(TSNode node, const std::string
     parseAttributeInto(attr_node, source, attributes);
   }
 
-  // Expect "struct" keyword
-  cursor.expect("struct");
-
   // Expect struct name (mandatory)
   if (auto id_node = cursor.expect("identifier")) {
     name = getNodeText(*id_node, source);
@@ -211,17 +197,11 @@ AstStructDescriptor Parser::parseStructDefinition(TSNode node, const std::string
     name = "UnnamedStruct";  // Fallback for recovery
   }
 
-  // Expect opening brace
-  cursor.expect("{");
-
   // Consume all field declarations (0 or more)
   for (auto field_node : cursor.eatAll("field_declaration")) {
     auto field = parseFieldDeclaration(field_node, source);
     fields.push_back(std::move(field.get()));
   }
-
-  // Expect closing brace
-  cursor.expect("}");
 
   // Check for unconsumed nodes
   cursor.expectEnd();
@@ -241,9 +221,6 @@ NodeDefinition Parser::parseNodeDefinition(TSNode node, const std::string & sour
   def.line = line;
   def.column = column;
 
-  // Expect "node" keyword (if grammar includes it)
-  cursor.eat("node");
-
   // Expect node name (mandatory)
   if (auto id_node = cursor.expect("identifier")) {
     def.name = getNodeText(*id_node, source);
@@ -252,17 +229,11 @@ NodeDefinition Parser::parseNodeDefinition(TSNode node, const std::string & sour
     def.name = "UnnamedNode";  // Fallback for recovery
   }
 
-  // Expect opening brace
-  cursor.expect("{");
-
   // Consume all port declarations (0 or more)
   for (auto port_decl_node : cursor.eatAll("port_declaration")) {
     TSNode port_child = ts_node_child(port_decl_node, 0);
     def.ports.push_back(parsePort(port_child, source));
   }
-
-  // Expect closing brace
-  cursor.expect("}");
 
   // Check for unconsumed nodes
   cursor.expectEnd();
@@ -311,8 +282,6 @@ AstFieldDescriptor Parser::parseFieldDeclaration(TSNode node, const std::string 
     type = TypeDescriptor::makeArray(std::move(*type), size);
   }
 
-  cursor.expect(";");
-
   // Check for unconsumed nodes
   cursor.expectEnd();
 
@@ -348,9 +317,6 @@ AstPort Parser::parsePort(TSNode node, const std::string & source)
   if (port_type == "service_port") {
     // Service port: service IDENTIFIER ( type_spec? ) -> (type_spec|void) ;
 
-    // Expect "service" keyword
-    cursor.expect("service");
-
     // Expect port name first (mandatory for service)
     if (auto id_node = cursor.expect("identifier")) {
       name = getNodeText(*id_node, source);
@@ -358,30 +324,21 @@ AstPort Parser::parsePort(TSNode node, const std::string & source)
       name = "unnamed_port";  // Fallback
     }
 
-    // Skip '('
-    cursor.expect("(");
-
     // Request type is optional in grammar
     if (auto req_type_node = cursor.eat("type_spec")) {
       request_type = parseType(*req_type_node, source);
     }
     // If no request type, it means empty request (like void)
 
-    // Skip ')'
-    cursor.expect(")");
-
-    // Skip '->'
-    if (cursor.eat("->")) {
-      // Response type can be type_spec or 'void' keyword
-      if (auto resp_type_node = cursor.eat("type_spec")) {
-        response_type = parseType(*resp_type_node, source);
-      } else {
-        // Could be 'void' keyword - for now we don't have a dedicated Void type
-        // We'll use an empty/default type or add a Void primitive type
-        // For now, create an Int32 as fallback
-        cursor.expect("void");  // Try to consume void keyword if present
-        response_type = TypeDescriptor::makePrimitive(PrimitiveType::Int32);
-      }
+    // Response type can be type_spec or 'void' keyword
+    if (auto resp_type_node = cursor.eat("type_spec")) {
+      response_type = parseType(*resp_type_node, source);
+    } else {
+      // Could be 'void' keyword - for now we don't have a dedicated Void type
+      // We'll use an empty/default type or add a Void primitive type
+      // For now, create an Int32 as fallback
+      cursor.expect("void");  // Try to consume void keyword if present
+      response_type = TypeDescriptor::makePrimitive(PrimitiveType::Int32);
     }
 
     // If request_type wasn't set, also use default
@@ -391,9 +348,6 @@ AstPort Parser::parsePort(TSNode node, const std::string & source)
 
   } else {
     // Pub/Sub port: (pub|sub) TYPE_SPEC IDENTIFIER ;
-
-    // Expect port keyword (pub/sub)
-    cursor.expect(port_type == "pub_port" ? "pub" : "sub");
 
     // Expect type first
     if (auto type_node = cursor.expect("type_spec")) {
@@ -409,9 +363,6 @@ AstPort Parser::parsePort(TSNode node, const std::string & source)
       name = "unnamed_port";  // Fallback
     }
   }
-
-  // Skip semicolon
-  cursor.expect(";");
 
   // Check for unconsumed nodes
   cursor.expectEnd();
@@ -456,8 +407,6 @@ void Parser::parseAttributeInto(TSNode node, const std::string & source, Attribu
 
   auto [line, column] = cursor.currentLocation();
 
-  cursor.expect("#[");
-
   std::string attr_name;
 
   if (auto identifier = cursor.expect("identifier")) {
@@ -466,24 +415,21 @@ void Parser::parseAttributeInto(TSNode node, const std::string & source, Attribu
 
   AttributeParameter params;
 
-  if (cursor.eat("(")) {
-    while (auto param_node =
-             cursor.eatAny({"string_literal", "number_literal", "qualified_identifier"})) {
-      std::string type = ts_node_type(*param_node);
-      std::string value = getNodeText(*param_node, source);
-      if (type == "string_literal") {
-        params.values.push_back(AttributeParameter::String(value));
-      } else if (type == "number_literal") {
-        if (value.find('.') != std::string::npos) {
-          params.values.push_back(AttributeParameter::FloatingPoint(std::stof(value)));
-        } else {
-          params.values.push_back(AttributeParameter::Integer(std::stoi(value)));
-        }
-      } else if (type == "qualified_identifier") {
-        params.values.push_back(AttributeParameter::Identifier(value));
+  while (auto param_node =
+           cursor.eatAny({"string_literal", "number_literal", "qualified_identifier"})) {
+    std::string type = ts_node_type(*param_node);
+    std::string value = getNodeText(*param_node, source);
+    if (type == "string_literal") {
+      params.values.push_back(AttributeParameter::String(value));
+    } else if (type == "number_literal") {
+      if (value.find('.') != std::string::npos) {
+        params.values.push_back(AttributeParameter::FloatingPoint(std::stof(value)));
+      } else {
+        params.values.push_back(AttributeParameter::Integer(std::stoi(value)));
       }
+    } else if (type == "qualified_identifier") {
+      params.values.push_back(AttributeParameter::Identifier(value));
     }
-    cursor.expect(")");
   }
 
   try {
@@ -497,7 +443,6 @@ void Parser::parseAttributeInto(TSNode node, const std::string & source, Attribu
     reportError("Parsing while parameter of " + attr_name + " causes " + e.what(), line, column);
   }
 
-  cursor.expect("]");
   cursor.expectEnd();
 }
 
@@ -557,6 +502,7 @@ void Parser::reportError(const std::string & message, size_t line, size_t column
   }
   oss << ": " << message;
 
+  std::cout << oss.str() << std::endl;
   errors_.push_back(oss.str());
 }
 

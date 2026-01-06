@@ -34,6 +34,8 @@ std::optional<TSNode> NodeCursor::advance()
 
 std::optional<TSNode> NodeCursor::eat(const std::string & node_type)
 {
+  skipUnnamed();
+
   auto current = peek();
   if (!current) {
     return std::nullopt;
@@ -49,6 +51,8 @@ std::optional<TSNode> NodeCursor::eat(const std::string & node_type)
 
 std::optional<TSNode> NodeCursor::expect(const std::string & node_type)
 {
+  skipUnnamed();
+
   auto current = peek();
   if (!current) {
     auto [line, col] = currentLocation();
@@ -69,6 +73,8 @@ std::optional<TSNode> NodeCursor::expect(const std::string & node_type)
 
 std::optional<TSNode> NodeCursor::eatAny(const std::vector<std::string> & node_types)
 {
+  skipUnnamed();
+
   auto current = peek();
   if (!current) {
     return std::nullopt;
@@ -123,6 +129,8 @@ std::pair<size_t, size_t> NodeCursor::locationOf(TSNode node)
 
 void NodeCursor::expectEnd()
 {
+  skipUnnamed();
+
   while (!isAtEnd()) {
     auto node = advance();
     if (node) {
