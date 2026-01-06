@@ -43,7 +43,7 @@ struct AttributeParameter
 class AttributeParser
 {
 public:
-  virtual std::string name() = 0;
+  virtual std::string name() const = 0;
 
   virtual std::unique_ptr<fibril_transport_common::AttributeBase> parse(
     AttributeParameter & param) = 0;

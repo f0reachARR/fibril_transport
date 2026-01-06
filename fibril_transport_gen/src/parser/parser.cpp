@@ -7,6 +7,7 @@
 #include <sstream>
 
 #include "attribute_parser.hpp"
+#include "ros_attribute_parser.hpp"
 
 namespace fibril
 {
@@ -16,6 +17,8 @@ Parser::Parser()
   parser_ = ts_parser_new();
   language_ = tree_sitter_fibril();
   ts_parser_set_language(parser_, language_);
+
+  registerBuiltinAttributeParsers();
 }
 
 Parser::~Parser()
@@ -483,11 +486,15 @@ void Parser::parseAttributeInto(TSNode node, const std::string & source, Attribu
     cursor.expect(")");
   }
 
-  auto parsed_attribute = AttributeParserRegistry::parse(attr_name, params);
-  if (parsed_attribute) {
-    attr_list.add(std::move(parsed_attribute));
-  } else {
-    reportError("Unknown attribute: " + attr_name, line, column);
+  try {
+    auto parsed_attribute = AttributeParserRegistry::parse(attr_name, params);
+    if (parsed_attribute) {
+      attr_list.add(std::move(parsed_attribute));
+    } else {
+      reportError("Unknown attribute: " + attr_name, line, column);
+    }
+  } catch (const std::exception & e) {
+    reportError("Parsing while parameter of " + attr_name + " causes " + e.what(), line, column);
   }
 
   cursor.expect("]");
